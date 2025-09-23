@@ -187,10 +187,11 @@ class ConvexJSTProductionWithPrices:
 
     def convert_to_decimal(self, value):
         """値をDecimal型に安全に変換"""
-        if value is None or value == 'N/A':
+        if value is None or value == 'N/A' or value == '':
             return None
         
         if isinstance(value, str):
+            # パーセンテージ処理
             if '%' in value:
                 try:
                     num_str = value.replace('%', '')
@@ -198,25 +199,66 @@ class ConvexJSTProductionWithPrices:
                 except:
                     return None
             
+            # ドル記号処理（$がある場合）
             if '$' in value:
                 try:
                     clean_value = value.replace('$', '').lower()
-                    if 'b' in clean_value:
-                        num = float(clean_value.replace('b', ''))
-                        return Decimal(str(num * 1000000000))
-                    elif 'm' in clean_value:
-                        num = float(clean_value.replace('m', ''))
-                        return Decimal(str(num * 1000000))
-                    elif 'k' in clean_value:
-                        num = float(clean_value.replace('k', ''))
-                        return Decimal(str(num * 1000))
-                    else:
-                        return Decimal(clean_value)
+                    return self._parse_numeric_with_suffix(clean_value)
                 except:
                     return None
+            
+            # ドル記号がない場合でも、数値パターンをチェック
+            # 例: "123.45M", "1.2B", "500K" など
+            if any(suffix in value.lower() for suffix in ['b', 'm', 'k', 'million', 'billion', 'thousand']):
+                try:
+                    clean_value = value.lower()
+                    return self._parse_numeric_with_suffix(clean_value)
+                except:
+                    return None
+            
+            # 純粋な数値の場合（カンマ区切りも含む）
+            try:
+                # カンマを除去してから数値変換
+                clean_value = value.replace(',', '').strip()
+                return Decimal(clean_value)
+            except:
+                return None
         
         try:
             return Decimal(str(value))
+        except:
+            return None
+    
+    def _parse_numeric_with_suffix(self, value):
+        """数値と接尾辞を解析してDecimal型に変換"""
+        try:
+            # カンマを除去
+            clean_value = value.replace(',', '').strip()
+            
+            if 'b' in clean_value or 'billion' in clean_value:
+                if 'billion' in clean_value:
+                    clean_value = clean_value.replace('billion', '').strip()
+                else:
+                    clean_value = clean_value.replace('b', '').strip()
+                num = float(clean_value)
+                return Decimal(str(num * 1000000000))
+            elif 'm' in clean_value or 'million' in clean_value:
+                if 'million' in clean_value:
+                    clean_value = clean_value.replace('million', '').strip()
+                else:
+                    clean_value = clean_value.replace('m', '').strip()
+                num = float(clean_value)
+                return Decimal(str(num * 1000000))
+            elif 'k' in clean_value or 'thousand' in clean_value:
+                if 'thousand' in clean_value:
+                    clean_value = clean_value.replace('thousand', '').strip()
+                else:
+                    clean_value = clean_value.replace('k', '').strip()
+                num = float(clean_value)
+                return Decimal(str(num * 1000))
+            else:
+                # カンマ区切りの数値も処理
+                return Decimal(clean_value)
         except:
             return None
 
