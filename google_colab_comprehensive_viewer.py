@@ -941,6 +941,121 @@ class DynamoDBComprehensiveViewer:
                 print(f"   備考: {row['Remarks']}")
             print()
 
+    def organize_cvx_columns(self, df):
+        """CVXデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'token', 'vapr', 'tvl', 
+            'vapr_numeric', 'tvl_numeric', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_cvxcrv_columns(self, df):
+        """cvxCRVデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'pool', 'stake', 'max_vapr_gov_token_rewards', 
+            'max_vapr_stablecoin_rewards', 'tvl', 'max_vapr_gov_numeric', 
+            'max_vapr_stable_numeric', 'tvl_numeric', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_pool_metrics_columns(self, df):
+        """ConvexPoolMetricsデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'Pool', 'pool_id', 'Current_vAPR', 
+            'Projected_vAPR', 'TVL', 'veCRV_boost', 'Remarks', 
+            'current_vapr_numeric', 'projected_vapr_numeric', 'tvl_numeric', 
+            'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_pool_latest_columns(self, df):
+        """PoolLatestデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（PoolLatest用）
+        desired_columns = [
+            'timezone', 'timestamp', 'Pool', 'pool_id', 'Current_vAPR', 
+            'Projected_vAPR', 'TVL', 'veCRV_boost', 'Remarks', 
+            'current_vapr_numeric', 'projected_vapr_numeric', 'tvl_numeric', 
+            'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_price_history_columns(self, df):
+        """PriceHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（PriceHistory用）
+        desired_columns = [
+            'timezone', 'timestamp', 'asset', 'rate', 'price_usd', 
+            'price_jpy', 'source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
     def export_to_csv(self, days=7):
         """データをCSVファイルにエクスポート（Google Colab自動ダウンロード対応）"""
         print(f"📁 過去{days}日間のデータをCSVエクスポート中...")
@@ -966,8 +1081,11 @@ class DynamoDBComprehensiveViewer:
 
         if not cvx_df.empty:
             filename = f'cvx_data_{timestamp}.csv'
-            cvx_df.to_csv(filename, index=False)
+            # CVXデータのカラム順序を整理
+            cvx_df_organized = self.organize_cvx_columns(cvx_df)
+            cvx_df_organized.to_csv(filename, index=False)
             print(f"✅ CVXデータ: {filename} ({len(cvx_df)}件)")
+            print(f"📋 CVXカラム順序: {list(cvx_df_organized.columns)}")
             downloaded_files.append(filename)
 
             if colab_available:
@@ -975,8 +1093,11 @@ class DynamoDBComprehensiveViewer:
 
         if not cvxcrv_df.empty:
             filename = f'cvxcrv_data_{timestamp}.csv'
-            cvxcrv_df.to_csv(filename, index=False)
+            # cvxCRVデータのカラム順序を整理
+            cvxcrv_df_organized = self.organize_cvxcrv_columns(cvxcrv_df)
+            cvxcrv_df_organized.to_csv(filename, index=False)
             print(f"✅ cvxCRVデータ: {filename} ({len(cvxcrv_df)}件)")
+            print(f"📋 cvxCRVカラム順序: {list(cvxcrv_df_organized.columns)}")
             downloaded_files.append(filename)
 
             if colab_available:
@@ -984,8 +1105,11 @@ class DynamoDBComprehensiveViewer:
 
         if not pools_df.empty:
             filename = f'pools_data_{timestamp}.csv'
-            pools_df.to_csv(filename, index=False)
+            # プールデータのカラム順序を整理
+            pools_df_organized = self.organize_pool_metrics_columns(pools_df)
+            pools_df_organized.to_csv(filename, index=False)
             print(f"✅ プールデータ: {filename} ({len(pools_df)}件)")
+            print(f"📋 プールデータカラム順序: {list(pools_df_organized.columns)}")
             downloaded_files.append(filename)
 
             if colab_available:
@@ -993,8 +1117,11 @@ class DynamoDBComprehensiveViewer:
 
         if not pool_latest_df.empty:
             filename = f'pool_latest_data_{timestamp}.csv'
-            pool_latest_df.to_csv(filename, index=False)
+            # PoolLatestデータのカラム順序を整理
+            pool_latest_df_organized = self.organize_pool_latest_columns(pool_latest_df)
+            pool_latest_df_organized.to_csv(filename, index=False)
             print(f"✅ PoolLatestデータ: {filename} ({len(pool_latest_df)}件)")
+            print(f"📋 PoolLatestカラム順序: {list(pool_latest_df_organized.columns)}")
             downloaded_files.append(filename)
 
             if colab_available:
@@ -1002,8 +1129,11 @@ class DynamoDBComprehensiveViewer:
 
         if not price_history_df.empty:
             filename = f'price_history_data_{timestamp}.csv'
-            price_history_df.to_csv(filename, index=False)
+            # PriceHistoryデータのカラム順序を整理
+            price_history_df_organized = self.organize_price_history_columns(price_history_df)
+            price_history_df_organized.to_csv(filename, index=False)
             print(f"✅ PriceHistoryデータ: {filename} ({len(price_history_df)}件)")
+            print(f"📋 PriceHistoryカラム順序: {list(price_history_df_organized.columns)}")
             downloaded_files.append(filename)
 
             if colab_available:
@@ -1052,6 +1182,27 @@ class DynamoDBComprehensiveViewer:
             return
 
         if not df.empty:
+            # CVXデータの場合はカラム順序を整理
+            if table_type.lower() == 'cvx':
+                df = self.organize_cvx_columns(df)
+                print(f"📋 CVXカラム順序: {list(df.columns)}")
+            # cvxCRVデータの場合はカラム順序を整理
+            elif table_type.lower() == 'cvxcrv':
+                df = self.organize_cvxcrv_columns(df)
+                print(f"📋 cvxCRVカラム順序: {list(df.columns)}")
+            # プールデータの場合はカラム順序を整理
+            elif table_type.lower() in ['pools', 'pool']:
+                df = self.organize_pool_metrics_columns(df)
+                print(f"📋 プールデータカラム順序: {list(df.columns)}")
+            # PoolLatestデータの場合はカラム順序を整理
+            elif table_type.lower() in ['poollatest', 'pool_latest']:
+                df = self.organize_pool_latest_columns(df)
+                print(f"📋 PoolLatestカラム順序: {list(df.columns)}")
+            # PriceHistoryデータの場合はカラム順序を整理
+            elif table_type.lower() in ['pricehistory', 'price_history']:
+                df = self.organize_price_history_columns(df)
+                print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
+            
             df.to_csv(filename, index=False)
             print(f"✅ {table_type}データ: {filename} ({len(df)}件)")
 
