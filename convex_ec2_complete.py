@@ -239,31 +239,78 @@ class ConvexEC2Complete:
             return None
 
     def get_usd_jpy_rate(self):
-        """USD/JPY為替レート取得（Alpha Vantage）"""
-        if not self.alphavantage_api_key:
-            self.logger.warning("⚠️ USD/JPY為替レート取得をスキップ（APIキー未設定）")
-            return None
+        """USD/JPY為替レート取得（複数のAPIを試行）"""
+        # 1. Alpha Vantage API（無料プラン制限対応）
+        if self.alphavantage_api_key:
+            try:
+                url = "https://www.alphavantage.co/query"
+                params = {
+                    'function': 'CURRENCY_EXCHANGE_RATE',
+                    'from_currency': 'USD',
+                    'to_currency': 'JPY',
+                    'apikey': self.alphavantage_api_key
+                }
+                
+                response = requests.get(url, params=params, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                # レート制限チェック
+                if 'Information' in data:
+                    self.logger.warning(f"⚠️ AlphaVantage API制限: {data['Information']}")
+                    raise Exception("API rate limit exceeded")
+                
+                if 'Realtime Currency Exchange Rate' in data:
+                    rate = float(data['Realtime Currency Exchange Rate']['5. Exchange Rate'])
+                    self.logger.info(f"💱 USD/JPY為替レート (AlphaVantage): ¥{rate:.2f}")
+                    return rate
+                else:
+                    raise Exception("Invalid API response structure")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ AlphaVantage API失敗: {e}")
         
+        # 2. 代替API: ExchangeRate-API
         try:
-            url = "https://www.alphavantage.co/query"
-            params = {
-                'function': 'CURRENCY_EXCHANGE_RATE',
-                'from_currency': 'USD',
-                'to_currency': 'JPY',
-                'apikey': self.alphavantage_api_key
-            }
+            url = "https://api.exchangerate-api.com/v4/latest/USD"
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.json()
             
+            if 'rates' in data and 'JPY' in data['rates']:
+                rate = float(data['rates']['JPY'])
+                self.logger.info(f"💱 USD/JPY為替レート (ExchangeRate-API): ¥{rate:.2f}")
+                return rate
+            else:
+                raise Exception("Invalid response structure")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ ExchangeRate-API失敗: {e}")
+        
+        # 3. 代替API: Fixer.io（無料プラン）
+        try:
+            url = "https://api.fixer.io/latest"
+            params = {
+                'base': 'USD',
+                'symbols': 'JPY'
+            }
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             
-            rate = float(data['Realtime Currency Exchange Rate']['5. Exchange Rate'])
-            self.logger.info(f"💱 USD/JPY為替レート: ¥{rate:.2f}")
-            return rate
-            
+            if 'rates' in data and 'JPY' in data['rates']:
+                rate = float(data['rates']['JPY'])
+                self.logger.info(f"💱 USD/JPY為替レート (Fixer.io): ¥{rate:.2f}")
+                return rate
+            else:
+                raise Exception("Invalid response structure")
+                
         except Exception as e:
-            self.logger.error(f"❌ USD/JPY為替レート取得エラー: {e}")
-            return None
+            self.logger.warning(f"⚠️ Fixer.io失敗: {e}")
+        
+        # 4. 最後の手段: 固定レート（約150円）
+        self.logger.warning("⚠️ 全てのAPIが失敗、固定レート（150円）を使用")
+        return 150.0
 
     def convert_to_decimal(self, value):
         """値をDecimal型に安全に変換"""
