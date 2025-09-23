@@ -641,11 +641,12 @@ class ConvexJSTProductionWithPrices:
             self.is_running = False
 
     def start_jst_production_with_prices(self, interval_minutes=15):
-        """日本時間15分間隔定期実行を開始（価格取得機能付き）"""
-        print(f"🚀 日本時間定期実行を開始します（{interval_minutes}分間隔）")
+        """日本時間15分間隔定期実行を開始（価格取得機能付き・正確な時間制御）"""
+        print(f"🚀 日本時間定期実行を開始します（{interval_minutes}分間隔・正確な時間制御）")
         print("🇯🇵 全データを日本時間（JST）で保存します")
         print("📊 履歴データ（ConvexPoolMetrics）+ 最新データ（PoolLatest）+ 価格履歴（PriceHistory）")
         print("💰 CRV/CVX価格（CoinGecko）+ USD/JPY為替（AlphaVantage）")
+        print("⏰ 正確な間隔実行（累積誤差なし）")
         print("⚠️ このセルを停止すると定期実行も停止します\n")
         
         # APIキー確認
@@ -654,20 +655,36 @@ class ConvexJSTProductionWithPrices:
             print("   USD/JPY為替レートの取得がスキップされます")
             print("   設定方法: export ALPHAVANTAGE_API_KEY='your_api_key'\n")
         
-        # スケジュールを設定
-        schedule.every(interval_minutes).minutes.do(self.run_jst_job_with_prices)
-        
         # 初回実行
         self.run_jst_job_with_prices()
+        
+        # 正確な時間間隔での実行ループ
+        interval_seconds = interval_minutes * 60
+        last_stats_time = datetime.now()
+        next_execution_time = datetime.now() + timedelta(seconds=interval_seconds)
         
         # 連続実行ループ
         try:
             while True:
-                schedule.run_pending()
+                now = datetime.now()
+                
+                # 実行時間になったら実行
+                if now >= next_execution_time:
+                    execution_start = datetime.now()
+                    self.run_jst_job_with_prices()
+                    execution_duration = (datetime.now() - execution_start).total_seconds()
+                    
+                    # 次回実行時間を正確に計算（実行時間を考慮しない）
+                    next_execution_time = next_execution_time + timedelta(seconds=interval_seconds)
+                    
+                    # 実行時間をログに記録
+                    jst_time = datetime.now(self.JST).strftime("%Y-%m-%d %H:%M:%S JST")
+                    print(f"⏱️ 実行時間: {execution_duration:.1f}秒 ({jst_time})")
+                    print(f"⏰ 次回実行予定: {next_execution_time.astimezone(self.JST).strftime('%Y-%m-%d %H:%M:%S JST')}")
                 
                 # 30分ごとに統計を表示（日本時間）
                 jst_now = datetime.now(self.JST)
-                if jst_now.minute in [0, 30]:
+                if (jst_now - last_stats_time).total_seconds() >= 1800:  # 30分間隔
                     elapsed = datetime.now() - self.start_time
                     success_rate = (self.success_count/(self.success_count+self.error_count)*100) if (self.success_count+self.error_count) > 0 else 0
                     jst_time = jst_now.strftime("%Y-%m-%d %H:%M:%S JST")
@@ -677,9 +694,12 @@ class ConvexJSTProductionWithPrices:
                     print(f"   成功: {self.success_count}回")
                     print(f"   エラー: {self.error_count}回")
                     print(f"   成功率: {success_rate:.1f}%")
+                    print(f"   次回実行予定: {next_execution_time.astimezone(self.JST).strftime('%Y-%m-%d %H:%M:%S JST')}")
                     print()
+                    
+                    last_stats_time = datetime.now()
                 
-                time.sleep(60)  # 1分間隔でチェック
+                time.sleep(1)  # 1秒間隔でチェック
                 
         except KeyboardInterrupt:
             elapsed = datetime.now() - self.start_time
