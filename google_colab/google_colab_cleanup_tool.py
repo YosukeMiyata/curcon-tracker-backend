@@ -2,7 +2,7 @@
 # DynamoDB Google Colab用クリーンアップツール（修正版）
 # 最新データ保持 + 全データ削除機能
 # PriceHistory・PoolLatestテーブル対応
-# convex_ec2_complete.py統一版
+# data_acquisition_system/convex_ec2_complete.py統一版
 # =====================================
 
 import boto3

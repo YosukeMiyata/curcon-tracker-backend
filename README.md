@@ -21,9 +21,9 @@ CurConTrackerは、Convexデータを効率的に収集・処理・監視する�
 ## ⚡ 機能
 
 ### 🔄 データスクレイピング
-- **Convex_Production_JST_WithPrices.py**: 本番環境用のConvexデータスクレイピング
-- **convex_scraper_integrated.py**: 統合型スクレイピングシステム
-- **convex_ec2_improved.py**: EC2最適化版スクレイパー
+- **data_acquisition_system/convex_ec2_complete.py**: EC2完全版スクレイパー
+- **google_colab/data_acquisition/Convex_Production_JST_WithPrices.py**: Google Colab用本番環境スクレイピング
+- **google_colab/data_acquisition/convex_scraper_integrated.py**: Google Colab用統合型スクレイピング
 
 ### 🚀 デプロイメント
 - **deploy_ec2_fixed_scraper.sh**: EC2自動デプロイスクリプト
@@ -91,14 +91,12 @@ CONVEX_BASE_URL=your-convex-url
 ### 基本的なスクレイピング実行
 
 ```bash
-# 本番環境用スクレイピング
-python Convex_Production_JST_WithPrices.py
+# EC2完全版スクレイパー
+python data_acquisition_system/convex_ec2_complete.py
 
-# 統合型スクレイピング
-python convex_scraper_integrated.py
-
-# EC2最適化版
-python convex_ec2_improved.py
+# Google Colab用スクレイピング（Colab環境で実行）
+# exec(open('google_colab/data_acquisition/Convex_Production_JST_WithPrices.py').read())
+# exec(open('google_colab/data_acquisition/convex_scraper_integrated.py').read())
 ```
 
 ### 監視の開始
@@ -148,7 +146,7 @@ python convex_ec2_improved.py
 4. **サービス開始**
    ```bash
    # スクレイピングサービス開始
-   python convex_ec2_improved.py
+   python data_acquisition_system/convex_ec2_complete.py
    
    # 監視サービス開始
    ./monitor_convex.sh

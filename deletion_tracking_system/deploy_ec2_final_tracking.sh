@@ -189,7 +189,7 @@ import os
 sys.path.append('/home/ubuntu/deletion-tracking')
 
 from final_tracking_system import FinalTrackingSystem
-from convex_ec2_complete import ConvexEC2Complete
+from data_acquisition_system.convex_ec2_complete import ConvexEC2Complete
 
 class TrackedConvexScraperFinal(ConvexEC2Complete):
     def __init__(self):
