@@ -239,15 +239,23 @@ class DynamoDBCleanupTool:
                 table = self.dynamodb.Table(table_name)
 
                 if table_name == 'ConvexPoolMetrics':
-                    # 最新タイムスタンプを取得
+                    # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(
                         ProjectionExpression='#ts',
-                        ExpressionAttributeNames={'#ts': 'timestamp'},
-                        Limit=1000
+                        ExpressionAttributeNames={'#ts': 'timestamp'}
                     )
+                    timestamps = [item['timestamp'] for item in response['Items']]
 
-                    if response['Items']:
-                        timestamps = [item['timestamp'] for item in response['Items']]
+                    # ページネーション対応
+                    while 'LastEvaluatedKey' in response:
+                        response = table.scan(
+                            ProjectionExpression='#ts',
+                            ExpressionAttributeNames={'#ts': 'timestamp'},
+                            ExclusiveStartKey=response['LastEvaluatedKey']
+                        )
+                        timestamps.extend([item['timestamp'] for item in response['Items']])
+
+                    if timestamps:
                         unique_timestamps = list(set(timestamps))
                         unique_timestamps.sort(reverse=True)
 
@@ -271,15 +279,23 @@ class DynamoDBCleanupTool:
                         print(f"   データなし")
 
                 elif table_name == 'PriceHistory':
-                    # 最新タイムスタンプを取得
+                    # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(
                         ProjectionExpression='#ts',
-                        ExpressionAttributeNames={'#ts': 'timestamp'},
-                        Limit=1000
+                        ExpressionAttributeNames={'#ts': 'timestamp'}
                     )
+                    timestamps = [item['timestamp'] for item in response['Items']]
 
-                    if response['Items']:
-                        timestamps = [item['timestamp'] for item in response['Items']]
+                    # ページネーション対応
+                    while 'LastEvaluatedKey' in response:
+                        response = table.scan(
+                            ProjectionExpression='#ts',
+                            ExpressionAttributeNames={'#ts': 'timestamp'},
+                            ExclusiveStartKey=response['LastEvaluatedKey']
+                        )
+                        timestamps.extend([item['timestamp'] for item in response['Items']])
+
+                    if timestamps:
                         unique_timestamps = list(set(timestamps))
                         unique_timestamps.sort(reverse=True)
 
@@ -331,8 +347,8 @@ class DynamoDBCleanupTool:
                             print(f"   削除対象: 古いデータ {len(old_items):,}件")
 
                             if old_items:
-                                print(f"   削除予定の古いデータ例:")
-                                for i, item in enumerate(old_items[:5], 1):
+                                print(f"   削除予定の古いデータ:")
+                                for i, item in enumerate(old_items, 1):
                                     pool_id = item.get('pool_id', 'N/A')
                                     updated_at = item.get('updated_at', 'N/A')
                                     print(f"     {i}. pool_id: {pool_id} | updated: {updated_at}")
@@ -397,6 +413,18 @@ class DynamoDBCleanupTool:
             print("🗑️ 最新データ以外を削除（クリーンアップ）")
             print("⚠️ 最新のタイムスタンプのデータのみ保持します")
             print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input("本当に削除を実行しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("✅ 削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print("❌ 削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
 
         tables_to_clean = [
             {
@@ -691,6 +719,19 @@ class DynamoDBCleanupTool:
             print("🔥 全データ削除機能")
             print("⚠️⚠️⚠️ 警告: 全てのデータが削除されます ⚠️⚠️⚠️")
             print("=" * 60)
+            
+            # 確認プロンプト
+            print("⚠️ この操作は取り消せません！")
+            while True:
+                user_input = input("本当に全データを削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("✅ 全データ削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print("❌ 全データ削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
 
         # 削除対象テーブル
         tables_to_clear = [
@@ -922,7 +963,9 @@ print("   - 最新データは必ず保持")
 print("   - PoolLatest: 最新のupdated_atを持つデータのみ保持")
 print("   - プレビューで削除対象を事前確認")
 print("   - バッチ削除で効率的な処理")
+print("   - 削除実行前にy/N確認プロンプト")
 print("\n🔧 修正内容:")
 print("   - 本番・テストの判別を削除")
 print("   - convex_ec2_complete.py統一版に対応")
 print("   - PoolLatestは最新のupdated_atで判定")
+print("   - 削除実行前に確認プロンプトを追加")

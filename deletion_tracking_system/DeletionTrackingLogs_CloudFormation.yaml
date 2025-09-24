@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Deletion Tracking Logs Table for Convex Tracker'
+
+Resources:
+  DeletionTrackingLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: DeletionTrackingLogs
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: log_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: table_name
+          AttributeType: S
+        - AttributeName: operation_type
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: log_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: table-timestamp-index
+          KeySchema:
+            - AttributeName: table_name
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+        - IndexName: operation-timestamp-index
+          KeySchema:
+            - AttributeName: operation_type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+        - IndexName: date-range-index
+          KeySchema:
+            - AttributeName: date
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+      Tags:
+        - Key: Project
+          Value: ConvexTracker
+        - Key: Environment
+          Value: Production
+        - Key: Purpose
+          Value: DeletionTracking
+
+Outputs:
+  DeletionTrackingLogsTableName:
+    Description: 'Name of the DeletionTrackingLogs table'
+    Value: !Ref DeletionTrackingLogsTable
+    Export:
+      Name: DeletionTrackingLogsTableName
+  DeletionTrackingLogsTableArn:
+    Description: 'ARN of the DeletionTrackingLogs table'
+    Value: !GetAtt DeletionTrackingLogsTable.Arn
+    Export:
+      Name: DeletionTrackingLogsTableArn
