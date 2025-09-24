@@ -53,7 +53,7 @@ log_info "✅ SSH接続成功"
 
 # ファイル転送
 log_info "📦 ファイル転送中..."
-scp -i "$SSH_KEY" -o StrictHostKeyChecking=no convex_ec2_production.py ubuntu@"$EC2_IP":/tmp/ || {
+scp -i "$SSH_KEY" -o StrictHostKeyChecking=no data_acquisition_system/convex_ec2_complete.py ubuntu@"$EC2_IP":/tmp/ || {
     log_error "ファイル転送に失敗しました"
     exit 1
 }
@@ -109,8 +109,8 @@ pip install --upgrade pip
 pip install selenium beautifulsoup4 boto3 requests python-dateutil lxml
 
 log_info "📄 メインスクリプト配置"
-mv /tmp/convex_ec2_production.py /home/ubuntu/convex-scraper/
-chmod +x /home/ubuntu/convex-scraper/convex_ec2_production.py
+mv /tmp/convex_ec2_complete.py /home/ubuntu/convex-scraper/
+chmod +x /home/ubuntu/convex-scraper/convex_ec2_complete.py
 
 log_info "⚙️ 環境変数ファイル作成"
 cat > /home/ubuntu/convex-scraper/.env << 'ENVEOF'
@@ -140,7 +140,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/convex-scraper
 Environment=PATH=/home/ubuntu/convex-scraper/venv/bin
 EnvironmentFile=/home/ubuntu/convex-scraper/.env
-ExecStart=/home/ubuntu/convex-scraper/venv/bin/python /home/ubuntu/convex-scraper/convex_ec2_production.py
+ExecStart=/home/ubuntu/convex-scraper/venv/bin/python /home/ubuntu/convex-scraper/convex_ec2_complete.py
 Restart=always
 RestartSec=60
 StandardOutput=append:/home/ubuntu/convex-scraper/logs/convex.log

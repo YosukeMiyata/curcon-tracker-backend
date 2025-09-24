@@ -26,13 +26,12 @@ CurConTrackerは、Convexデータを効率的に収集・処理・監視する�
 - **google_colab/data_acquisition/convex_scraper_integrated.py**: Google Colab用統合型スクレイピング
 
 ### 🚀 デプロイメント
-- **deploy_ec2_fixed_scraper.sh**: EC2自動デプロイスクリプト
-- **deploy_t3_micro.sh**: t3.microインスタンス用デプロイスクリプト
+- **data_acquisition_system/deploy_t3_micro.sh**: t3.microインスタンス用デプロイスクリプト
 - **ec2_quick_start.md**: EC2クイックスタートガイド
 - **ec2_setup_guide.md**: 詳細セットアップガイド
 
 ### 📊 監視・運用
-- **monitor_convex.sh**: Convexデータ監視スクリプト
+- **data_acquisition_system/monitor_convex.sh**: Convexデータ監視スクリプト
 - **production_monitor.sh**: 本番環境監視システム
 - **t3_micro_recommendation.md**: t3.micro選択の正当性分析
 - **t3_micro_quick_deploy.md**: t3.microクイックデプロイガイド
@@ -103,7 +102,8 @@ python data_acquisition_system/convex_ec2_complete.py
 
 ```bash
 # Convexデータ監視
-./monitor_convex.sh
+./data_acquisition_system/monitor_convex.sh status
+./data_acquisition_system/monitor_convex.sh logs
 
 # 本番環境監視
 ./production_monitor.sh
@@ -114,11 +114,8 @@ python data_acquisition_system/convex_ec2_complete.py
 ### EC2自動デプロイ
 
 ```bash
-# 基本的なデプロイ
-./deploy_ec2_fixed_scraper.sh
-
 # t3.microインスタンス用デプロイ
-./deploy_t3_micro.sh
+./data_acquisition_system/deploy_t3_micro.sh -h <EC2_IP> -k <SSH_KEY_PATH>
 ```
 
 ### 手動デプロイ手順

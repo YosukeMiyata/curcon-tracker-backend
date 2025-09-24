@@ -49,7 +49,7 @@ while True:
 
 ```bash
 # 改善されたスクリプトを実行
-python convex_ec2_improved.py
+python data_acquisition_system/convex_ec2_complete.py
 ```
 
 ### Google Colabでの使用

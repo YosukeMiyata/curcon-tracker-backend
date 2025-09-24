@@ -17,6 +17,20 @@
   - アクティブ・非アクティブプールの適切な表示
   - APIレスポンス生成機能
 
+### デプロイメント・運用
+- **`deploy_t3_micro.sh`** - t3.micro EC2自動デプロイスクリプト
+  - t3.microインスタンス用の最適化されたデプロイ
+  - Chrome、ChromeDriver、Python環境の完全セットアップ
+  - systemdサービス設定と自動起動
+  - 環境変数管理とログ設定
+
+- **`monitor_convex.sh`** - Convexスクレイパー監視スクリプト
+  - サービスステータス監視とログ表示
+  - リソース使用量監視（CPU、メモリ、ディスク）
+  - ヘルスチェックとアラート機能
+  - ログ管理とローテーション
+
+
 ## 機能概要
 
 ### データ取得機能
@@ -36,7 +50,16 @@
 
 ### EC2環境での実行
 ```bash
+# 直接実行
 python convex_ec2_complete.py
+
+# t3.microインスタンス用デプロイ
+./deploy_t3_micro.sh -h <EC2_IP> -k <SSH_KEY_PATH>
+
+# 監視スクリプトの使用
+./monitor_convex.sh status    # サービスステータス表示
+./monitor_convex.sh logs      # リアルタイムログ表示
+./monitor_convex.sh health    # ヘルスチェック実行
 ```
 
 
