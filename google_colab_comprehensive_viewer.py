@@ -536,7 +536,7 @@ class DynamoDBComprehensiveViewer:
             return pd.DataFrame()
 
     def display_data_preview(self, df, title, max_rows=5):
-        """データのプレビューを表示"""
+        """データのプレビューを表示（CSV出力と同じ項目順序）"""
         if df.empty:
             print(f"❌ {title}: データがありません")
             return
@@ -544,15 +544,24 @@ class DynamoDBComprehensiveViewer:
         print(f"\n📊 {title} (最新{min(max_rows, len(df))}件)")
         print("="*50)
 
-        # 主要列のみ表示
-        display_cols = ['timestamp', 'datetime'] if 'datetime' in df.columns else ['timestamp']
-        for col in df.columns:
-            if col not in display_cols and col not in ['token', 'stake', 'pool_id', 'Pool', 'vapr', 'tvl', 'Current_vAPR', 'TVL', 'symbol', 'price']:
-                display_cols.append(col)
+        # テーブルタイプに応じてカラム順序を整理
+        if 'token' in df.columns and df['token'].iloc[0] == 'CVX':
+            # CVXデータ
+            df = self.organize_cvx_columns(df)
+        elif 'stake' in df.columns and df['stake'].iloc[0] == 'cvxCRV':
+            # cvxCRVデータ
+            df = self.organize_cvxcrv_columns(df)
+        elif 'Pool' in df.columns and 'pool_id' in df.columns:
+            # ConvexPoolMetricsデータ
+            df = self.organize_pool_metrics_columns(df)
+        elif 'Pool' in df.columns and 'pool_id' in df.columns and title == 'PoolLatestデータ':
+            # PoolLatestデータ
+            df = self.organize_pool_latest_columns(df)
+        elif 'asset' in df.columns or 'rate' in df.columns:
+            # PriceHistoryデータ
+            df = self.organize_price_history_columns(df)
 
-        display_cols = [col for col in display_cols if col in df.columns]
-        preview_df = df[display_cols].head(max_rows)
-
+        preview_df = df.head(max_rows)
         display(preview_df)
 
     def create_trend_charts(self):
@@ -923,7 +932,10 @@ class DynamoDBComprehensiveViewer:
         print(f"🎯 発見された投資機会: {len(opportunities)}件")
         print()
 
-        # 結果表示
+        # 結果表示（カラム順序を整理）
+        opportunities = self.organize_pool_latest_columns(opportunities)
+        print(f"📋 表示カラム順序: {list(opportunities.columns)}")
+        
         display_cols = ['Pool', 'Current_vAPR', 'TVL', 'veCRV_boost']
         if 'current_vapr_numeric' in opportunities.columns:
             display_cols.append('current_vapr_numeric')
@@ -1298,12 +1310,20 @@ def show_pool_latest_data(limit=20):
     """PoolLatestデータを表示"""
     viewer = DynamoDBComprehensiveViewer()
     df = viewer.get_pool_latest_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_pool_latest_columns(df)
+        print(f"📋 PoolLatestカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "PoolLatestデータ", max_rows=limit)
 
 def show_price_history_data(limit=20, symbol=None):
     """PriceHistoryデータを表示"""
     viewer = DynamoDBComprehensiveViewer()
     df = viewer.get_price_history_data(limit=limit, symbol=symbol)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_price_history_columns(df)
+        print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "PriceHistoryデータ", max_rows=limit)
 
 # セル4: 実行コマンド例
