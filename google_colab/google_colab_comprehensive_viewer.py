@@ -586,7 +586,7 @@ class DynamoDBComprehensiveViewer:
         # サブプロット作成（4x2レイアウト）
         fig = make_subplots(
             rows=4, cols=2,
-            subplot_titles=('CVX vAPR トレンド', 'cvxCRV vAPR トレンド', '高APRプール分布', 'TVL分布', 'トークン価格トレンド', '価格分布', 'ドル円レート', 'ドル円レート分布'),
+            subplot_titles=('CVX vAPR トレンド', 'cvxCRV vAPR トレンド', '高APRプール分布', 'TVL分布', 'CRV価格トレンド', 'CVX価格トレンド', 'ドル円レート', 'ドル円レート分布'),
             specs=[[{"secondary_y": False}, {"secondary_y": False}],
                    [{"secondary_y": False}, {"secondary_y": False}],
                    [{"secondary_y": False}, {"secondary_y": False}],
@@ -660,7 +660,7 @@ class DynamoDBComprehensiveViewer:
                 row=2, col=2
             )
 
-        # トークン価格トレンド
+        # CRV価格トレンド
         print(f"🔍 PriceHistoryデータ確認: {len(price_df)}件")
         if not price_df.empty:
             print(f"   PriceHistoryカラム: {list(price_df.columns)}")
@@ -681,78 +681,75 @@ class DynamoDBComprehensiveViewer:
                 print("   💰 レートを使用")
 
             if price_column:
-                # 主要トークンの価格トレンド
-                major_tokens = ['CVX', 'CRV', 'USDC', 'ETH', 'BTC', 'WETH']
-                colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown']
+                # CRV価格トレンド
+                if 'asset' in price_df.columns:
+                    crv_data = price_df[price_df['asset'] == 'CRV'].copy()
+                elif 'symbol' in price_df.columns:
+                    crv_data = price_df[price_df['symbol'] == 'CRV'].copy()
+                else:
+                    crv_data = pd.DataFrame()
 
-                for i, token in enumerate(major_tokens):
-                    if 'asset' in price_df.columns:
-                        token_data = price_df[price_df['asset'] == token].copy()
-                    elif 'symbol' in price_df.columns:
-                        token_data = price_df[price_df['symbol'] == token].copy()
+                if not crv_data.empty:
+                    # 日時でソート
+                    if 'datetime' in crv_data.columns:
+                        crv_data = crv_data.sort_values('datetime')
+                    elif 'timestamp' in crv_data.columns:
+                        crv_data = crv_data.sort_values('timestamp')
+
+                    crv_prices = pd.to_numeric(crv_data[price_column], errors='coerce').fillna(0)
+                    crv_prices = crv_prices[crv_prices > 0]  # 正の価格のみ
+
+                    if len(crv_prices) > 0:
+                        x_values = crv_data['datetime'] if 'datetime' in crv_data.columns else crv_data['timestamp']
+                        fig.add_trace(
+                            go.Scatter(x=x_values, y=crv_prices,
+                                      mode='lines+markers', name='CRV Price', line=dict(color='red')),
+                            row=3, col=1
+                        )
+                        print(f"   ✅ CRV: {len(crv_prices)}件の価格データを追加")
                     else:
-                        # asset/symbolカラムがない場合は、すべてのデータを使用
-                        token_data = price_df.copy()
-
-                    if not token_data.empty:
-                        # 日時でソート
-                        if 'datetime' in token_data.columns:
-                            token_data = token_data.sort_values('datetime')
-                        elif 'timestamp' in token_data.columns:
-                            token_data = token_data.sort_values('timestamp')
-
-                        price_values = pd.to_numeric(token_data[price_column], errors='coerce').fillna(0)
-                        price_values = price_values[price_values > 0]  # 正の価格のみ
-
-                        if len(price_values) > 0:
-                            x_values = token_data['datetime'] if 'datetime' in token_data.columns else token_data['timestamp']
-                            fig.add_trace(
-                                go.Scatter(x=x_values, y=price_values,
-                                          mode='lines', name=f'{token} Price ({price_column})', line=dict(color=colors[i % len(colors)])),
-                                row=3, col=1
-                            )
-                            print(f"   ✅ {token}: {len(price_values)}件の価格データを追加")
+                        print("   ❌ CRVの有効な価格データがありません")
+                else:
+                    print("   ❌ CRVデータが見つかりません")
             else:
                 print("   ❌ 価格カラムが見つかりません")
         else:
             print("   ❌ PriceHistoryデータが空です")
 
-        # 価格分布（最新データ）
+        # CVX価格トレンド
         if not price_df.empty and price_column:
-            try:
-                # 価格カラムを特定（上記で特定済み）
-                if 'asset' in price_df.columns:
-                    # assetでグループ化して最新価格を取得
-                    latest_prices = price_df.groupby('asset')[price_column].last()
-                    latest_prices = pd.to_numeric(latest_prices, errors='coerce').fillna(0)
-                    latest_prices = latest_prices[latest_prices > 0]  # 正の価格のみ
-                    latest_prices = latest_prices.sort_values(ascending=False).head(10)  # 上位10件
-                elif 'symbol' in price_df.columns:
-                    # symbolでグループ化して最新価格を取得
-                    latest_prices = price_df.groupby('symbol')[price_column].last()
-                    latest_prices = pd.to_numeric(latest_prices, errors='coerce').fillna(0)
-                    latest_prices = latest_prices[latest_prices > 0]  # 正の価格のみ
-                    latest_prices = latest_prices.sort_values(ascending=False).head(10)  # 上位10件
-                else:
-                    # asset/symbolカラムがない場合は、最新の価格データを直接使用
-                    latest_prices = pd.to_numeric(price_df[price_column], errors='coerce').fillna(0)
-                    latest_prices = latest_prices[latest_prices > 0]
-                    latest_prices = latest_prices.tail(10)  # 最新10件
-                    latest_prices.index = [f'Price_{i}' for i in range(len(latest_prices))]
+            # CVX価格トレンド
+            if 'asset' in price_df.columns:
+                cvx_data = price_df[price_df['asset'] == 'CVX'].copy()
+            elif 'symbol' in price_df.columns:
+                cvx_data = price_df[price_df['symbol'] == 'CVX'].copy()
+            else:
+                cvx_data = pd.DataFrame()
 
-                if len(latest_prices) > 0:
+            if not cvx_data.empty:
+                # 日時でソート
+                if 'datetime' in cvx_data.columns:
+                    cvx_data = cvx_data.sort_values('datetime')
+                elif 'timestamp' in cvx_data.columns:
+                    cvx_data = cvx_data.sort_values('timestamp')
+
+                cvx_prices = pd.to_numeric(cvx_data[price_column], errors='coerce').fillna(0)
+                cvx_prices = cvx_prices[cvx_prices > 0]  # 正の価格のみ
+
+                if len(cvx_prices) > 0:
+                    x_values = cvx_data['datetime'] if 'datetime' in cvx_data.columns else cvx_data['timestamp']
                     fig.add_trace(
-                        go.Bar(x=latest_prices.index, y=latest_prices.values,
-                               name=f'最新価格 ({price_column})', marker_color='lightblue'),
+                        go.Scatter(x=x_values, y=cvx_prices,
+                                  mode='lines+markers', name='CVX Price', line=dict(color='blue')),
                         row=3, col=2
                     )
-                    print(f"   ✅ 価格分布: {len(latest_prices)}件のデータを表示")
+                    print(f"   ✅ CVX: {len(cvx_prices)}件の価格データを追加")
                 else:
-                    print("   ❌ 表示できる価格データがありません")
-            except Exception as e:
-                print(f"   ❌ 価格分布作成エラー: {e}")
+                    print("   ❌ CVXの有効な価格データがありません")
+            else:
+                print("   ❌ CVXデータが見つかりません")
         else:
-            print("   ❌ 価格分布データがありません")
+            print("   ❌ CVX価格データがありません")
 
         # ドル円レートのグラフを追加
         print("💱 ドル円レートデータを確認中...")
@@ -823,9 +820,9 @@ class DynamoDBComprehensiveViewer:
 
             # 代替案1: 既に取得済みのPoolLatestデータを使用
             if not pool_latest_df.empty:
-                print(f"   📊 PoolLatestデータから価格情報を取得: {len(pool_latest_df)}件")
+                print(f"   📊 PoolLatestデータから代替情報を取得: {len(pool_latest_df)}件")
 
-                # TVLベースの分布を表示
+                # TVLベースの分布を表示（CVX価格の代替）
                 if 'tvl_numeric' in pool_latest_df.columns:
                     tvl_data = pd.to_numeric(pool_latest_df['tvl_numeric'], errors='coerce').fillna(0)
                     tvl_data = tvl_data[tvl_data > 0].head(10)
@@ -834,12 +831,12 @@ class DynamoDBComprehensiveViewer:
                         pool_names = pool_latest_df['Pool'].head(len(tvl_data)) if 'Pool' in pool_latest_df.columns else [f'Pool_{i}' for i in range(len(tvl_data))]
                         fig.add_trace(
                             go.Bar(x=pool_names, y=tvl_data.values,
-                                   name='プールTVL (代替)', marker_color='lightgreen'),
+                                   name='プールTVL (代替)', marker_color='lightblue'),
                             row=3, col=2
                         )
                         print(f"   ✅ 代替データ: TVL分布を表示")
 
-                # APRベースの分布を表示
+                # APRベースの分布を表示（CRV価格の代替）
                 if 'current_vapr_numeric' in pool_latest_df.columns:
                     apr_data = pd.to_numeric(pool_latest_df['current_vapr_numeric'], errors='coerce').fillna(0)
                     apr_data = apr_data[apr_data > 0].head(10)
@@ -866,7 +863,7 @@ class DynamoDBComprehensiveViewer:
         fig.update_xaxes(title_text="プール名", row=2, col=1)
         fig.update_xaxes(title_text="プール名", row=2, col=2)
         fig.update_xaxes(title_text="日時", row=3, col=1)
-        fig.update_xaxes(title_text="トークン", row=3, col=2)
+        fig.update_xaxes(title_text="日時", row=3, col=2)
         fig.update_xaxes(title_text="日時", row=4, col=1)
         fig.update_xaxes(title_text="データポイント", row=4, col=2)
 
@@ -874,8 +871,8 @@ class DynamoDBComprehensiveViewer:
         fig.update_yaxes(title_text="vAPR (%)", row=1, col=2)
         fig.update_yaxes(title_text="vAPR (%)", row=2, col=1)
         fig.update_yaxes(title_text="TVL (USD)", row=2, col=2)
-        fig.update_yaxes(title_text="価格 (USD)", row=3, col=1)
-        fig.update_yaxes(title_text="価格 (USD)", row=3, col=2)
+        fig.update_yaxes(title_text="CRV価格 (USD)", row=3, col=1)
+        fig.update_yaxes(title_text="CVX価格 (USD)", row=3, col=2)
         fig.update_yaxes(title_text="レート (JPY)", row=4, col=1)
         fig.update_yaxes(title_text="レート (JPY)", row=4, col=2)
 
