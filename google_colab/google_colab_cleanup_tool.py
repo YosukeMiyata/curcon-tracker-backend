@@ -14,6 +14,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
 import warnings
+import sys
+import os
+import json
+import uuid
+from functools import wraps
 warnings.filterwarnings('ignore')
 
 # 日本語フォント設定
@@ -31,8 +36,75 @@ def convert_decimal_to_float(obj):
     else:
         return obj
 
+# 削除追跡システムクラス（統合版）
+class DeletionTrackingSystem:
+    def __init__(self):
+        """削除追跡システムの初期化"""
+        try:
+            self.dynamodb = boto3.resource('dynamodb')
+            self.table = self.dynamodb.Table('DeletionTrackingLogs')
+            self.connection_status = True
+            print("✅ 削除追跡システム初期化完了")
+        except Exception as e:
+            print(f"❌ 削除追跡システム初期化エラー: {e}")
+            self.connection_status = False
+
+    def log_deletion_operation(self, table_name, operation, function_name, caller_info, additional_data=None):
+        """削除操作を専用テーブルに記録"""
+        if not self.connection_status:
+            return False
+
+        try:
+            # ログエントリを作成
+            log_id = str(uuid.uuid4())
+            timestamp = datetime.now().isoformat()
+            date = timestamp[:10]  # YYYY-MM-DD形式
+            
+            log_entry = {
+                'log_id': log_id,
+                'timestamp': timestamp,
+                'table_name': table_name,
+                'operation_type': operation,
+                'function_name': function_name,
+                'caller_info': json.dumps(caller_info, ensure_ascii=False),
+                'additional_data': json.dumps(additional_data or {}, ensure_ascii=False),
+                'created_at': timestamp,
+                'date': date,
+                'log_level': 'INFO',
+                'source': 'google_colab_cleanup_tool',
+                'status': 'success'
+            }
+            
+            # 専用テーブルに保存
+            self.table.put_item(Item=log_entry)
+            
+            print(f"✅ 削除操作を記録: {table_name} - {operation}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 削除操作記録エラー: {e}")
+            return False
+
+    def _get_caller_info(self):
+        """呼び出し元情報を取得"""
+        try:
+            frame = sys._getframe(3)  # 3つ上のフレーム
+            filename = frame.f_code.co_filename
+            line_number = frame.f_lineno
+            function_name = frame.f_code.co_name
+            
+            return {
+                'filename': os.path.basename(filename),
+                'line_number': line_number,
+                'function_name': function_name,
+                'full_path': filename
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
 print("🗑️ DynamoDB Google Colab用クリーンアップツール準備完了!")
 print("🔧 必要なライブラリがインストールされました")
+print("📊 DeletionTrackingLogsテーブルへの追跡機能を統合しました")
 
 # セル2: クリーンアップツールクラス（修正版）
 class DynamoDBCleanupTool:
@@ -41,6 +113,8 @@ class DynamoDBCleanupTool:
         try:
             self.dynamodb = boto3.resource('dynamodb')
             self.connection_status = True
+            # 削除追跡システムを初期化
+            self.tracker = DeletionTrackingSystem()
             print("✅ DynamoDB接続成功")
         except Exception as e:
             self.connection_status = False
@@ -990,7 +1064,7 @@ class DynamoDBCleanupTool:
         return total_deleted
 
     def delete_poolmeta_all(self, confirm=True):
-        """PoolMetaテーブル全件削除機能"""
+        """PoolMetaテーブル全件削除機能（追跡付き）"""
         if not self.connection_status:
             print("❌ DynamoDBに接続できません")
             return False
@@ -1011,6 +1085,21 @@ class DynamoDBCleanupTool:
                     return False
                 else:
                     print("⚠️ 'y' または 'n' を入力してください")
+
+        # 削除操作を追跡ログに記録
+        caller_info = self.tracker._get_caller_info()
+        additional_data = {
+            'operation': 'full_delete',
+            'table_type': 'metadata',
+            'confirmation_required': confirm
+        }
+        self.tracker.log_deletion_operation(
+            table_name='PoolMeta',
+            operation='full_delete',
+            function_name='delete_poolmeta_all',
+            caller_info=caller_info,
+            additional_data=additional_data
+        )
 
         try:
             table = self.dynamodb.Table('PoolMeta')
@@ -1066,19 +1155,49 @@ class DynamoDBCleanupTool:
 
                 if confirm:
                     print(f"   ✅ PoolMetaテーブル: {deleted_count:,}件削除完了")
+                
+                # 削除完了ログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='PoolMeta',
+                    operation='delete_completed',
+                    function_name='delete_poolmeta_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': deleted_count, 'status': 'success'}
+                )
+                
                 return deleted_count
             else:
                 if confirm:
                     print(f"   ✅ PoolMetaテーブル: データなし")
+                
+                # 削除対象なしログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='PoolMeta',
+                    operation='delete_completed',
+                    function_name='delete_poolmeta_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': 0, 'status': 'no_data'}
+                )
+                
                 return 0
 
         except Exception as e:
             if confirm:
                 print(f"   ❌ PoolMetaテーブル削除エラー: {e}")
+            
+            # エラーログを記録
+            self.tracker.log_deletion_operation(
+                table_name='PoolMeta',
+                operation='delete_error',
+                function_name='delete_poolmeta_all',
+                caller_info=caller_info,
+                additional_data={'error': str(e), 'status': 'error'}
+            )
+            
             return False
 
     def delete_vaultmeta_all(self, confirm=True):
-        """VaultMetaテーブル全件削除機能"""
+        """VaultMetaテーブル全件削除機能（追跡付き）"""
         if not self.connection_status:
             print("❌ DynamoDBに接続できません")
             return False
@@ -1099,6 +1218,21 @@ class DynamoDBCleanupTool:
                     return False
                 else:
                     print("⚠️ 'y' または 'n' を入力してください")
+
+        # 削除操作を追跡ログに記録
+        caller_info = self.tracker._get_caller_info()
+        additional_data = {
+            'operation': 'full_delete',
+            'table_type': 'metadata',
+            'confirmation_required': confirm
+        }
+        self.tracker.log_deletion_operation(
+            table_name='VaultMeta',
+            operation='full_delete',
+            function_name='delete_vaultmeta_all',
+            caller_info=caller_info,
+            additional_data=additional_data
+        )
 
         try:
             table = self.dynamodb.Table('VaultMeta')
@@ -1156,15 +1290,45 @@ class DynamoDBCleanupTool:
 
                 if confirm:
                     print(f"   ✅ VaultMetaテーブル: {deleted_count:,}件削除完了")
+                
+                # 削除完了ログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='VaultMeta',
+                    operation='delete_completed',
+                    function_name='delete_vaultmeta_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': deleted_count, 'status': 'success'}
+                )
+                
                 return deleted_count
             else:
                 if confirm:
                     print(f"   ✅ VaultMetaテーブル: データなし")
+                
+                # 削除対象なしログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='VaultMeta',
+                    operation='delete_completed',
+                    function_name='delete_vaultmeta_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': 0, 'status': 'no_data'}
+                )
+                
                 return 0
 
         except Exception as e:
             if confirm:
                 print(f"   ❌ VaultMetaテーブル削除エラー: {e}")
+            
+            # エラーログを記録
+            self.tracker.log_deletion_operation(
+                table_name='VaultMeta',
+                operation='delete_error',
+                function_name='delete_vaultmeta_all',
+                caller_info=caller_info,
+                additional_data={'error': str(e), 'status': 'error'}
+            )
+            
             return False
 
     def create_cleanup_chart(self):
@@ -1470,3 +1634,7 @@ print("   - プライマリキーの動的特定機能追加（vault_id/id/name/
 print("   - エラーハンドリング改善（利用可能キー表示）")
 print("   - VaultMetaテーブル構造デバッグ機能追加")
 print("   - VaultMetaテーブル再作成対応（vault_idがプライマリキー）")
+print("   - DeletionTrackingLogsテーブルへの追跡機能統合")
+print("   - PoolMeta・VaultMeta削除操作の完全追跡")
+print("   - 削除開始・完了・エラーの各段階でログ記録")
+print("   - 呼び出し元情報と詳細メタデータの記録")
