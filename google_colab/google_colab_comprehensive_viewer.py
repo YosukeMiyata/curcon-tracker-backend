@@ -669,7 +669,7 @@ class DynamoDBComprehensiveViewer:
                 print(f"   📋 カラム一覧: {list(df.columns)}")
 
                 # 数値変換（Decimal型対応）
-                # vault_idは文字列IDなので数値変換から除外
+                # vault_idは文字列IDなので数値変換から除外（再作成後はvault_idがプライマリキー）
                 numeric_columns = ['tvl', 'apr', 'apy', 'fee', 'volume_24h', 'total_supply']
                 for col in numeric_columns:
                     if col in df.columns:
@@ -1265,7 +1265,7 @@ class DynamoDBComprehensiveViewer:
         if df.empty:
             return df
         
-        # 指定された順序のカラムリスト（VaultMeta用）
+        # 指定された順序のカラムリスト（VaultMeta用 - vault_idがプライマリキー）
         desired_columns = [
             'timezone', 'timestamp', 'vault_id', 'name', 'symbol', 'tvl', 
             'apr', 'apy', 'fee', 'volume_24h', 'total_supply', 'underlying_asset', 
@@ -1914,3 +1914,4 @@ print("   - 包括的なトレンド分析チャート（6つのサブプロッ�
 print("   - 全データエクスポート機能（制限なし）")
 print("   - フィールド構造分析機能（全フィールド確認）")
 print("   - pool_id/vault_idフィールドの文字列ID対応（修正済み）")
+print("   - VaultMetaテーブル再作成対応（vault_idがプライマリキー）")

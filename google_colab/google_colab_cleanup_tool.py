@@ -764,12 +764,40 @@ class DynamoDBCleanupTool:
 
                                 with table.batch_writer() as batch_writer:
                                     for item in batch:
+                                        # 実際のプライマリキーを動的に特定
+                                        key = {}
+                                        
                                         if table_name == 'PoolMeta':
-                                            key = {'pool_id': item['pool_id']}
+                                            # PoolMetaのプライマリキー候補を順番に試す
+                                            if 'pool_id' in item:
+                                                key = {'pool_id': item['pool_id']}
+                                            elif 'id' in item:
+                                                key = {'id': item['id']}
+                                            elif 'name' in item:
+                                                key = {'name': item['name']}
+                                            elif 'symbol' in item:
+                                                key = {'symbol': item['symbol']}
                                         else:  # VaultMeta
-                                            key = {'vault_id': item['vault_id']}
-                                        batch_writer.delete_item(Key=key)
-                                        deleted_count += 1
+                                            # VaultMetaのプライマリキーはvault_id（再作成後）
+                                            if 'vault_id' in item:
+                                                key = {'vault_id': item['vault_id']}
+                                            elif 'pool_id' in item:
+                                                key = {'pool_id': item['pool_id']}
+                                            elif 'id' in item:
+                                                key = {'id': item['id']}
+                                            elif 'name' in item:
+                                                key = {'name': item['name']}
+                                            elif 'symbol' in item:
+                                                key = {'symbol': item['symbol']}
+                                        
+                                        if key:
+                                            batch_writer.delete_item(Key=key)
+                                            deleted_count += 1
+                                        else:
+                                            # 利用可能なキーを表示してエラー
+                                            available_keys = list(item.keys())
+                                            print(f"   ❌ {table_name}のプライマリキーが見つかりません。利用可能なキー: {available_keys}")
+                                            continue
 
                                 # 進捗表示
                                 if confirm and len(items_to_delete) > 50 and deleted_count % 25 == 0:
@@ -1008,7 +1036,24 @@ class DynamoDBCleanupTool:
 
                     with table.batch_writer() as batch_writer:
                         for item in batch:
-                            key = {'pool_id': item['pool_id']}
+                            # 実際のプライマリキーを動的に特定
+                            key = {}
+                            
+                            # プライマリキーの候補を順番に試す
+                            if 'pool_id' in item:
+                                key = {'pool_id': item['pool_id']}
+                            elif 'id' in item:
+                                key = {'id': item['id']}
+                            elif 'name' in item:
+                                key = {'name': item['name']}
+                            elif 'symbol' in item:
+                                key = {'symbol': item['symbol']}
+                            else:
+                                # 利用可能なキーを表示してエラー
+                                available_keys = list(item.keys())
+                                print(f"   ❌ プライマリキーが見つかりません。利用可能なキー: {available_keys}")
+                                continue
+                            
                             batch_writer.delete_item(Key=key)
                             deleted_count += 1
 
@@ -1079,7 +1124,26 @@ class DynamoDBCleanupTool:
 
                     with table.batch_writer() as batch_writer:
                         for item in batch:
-                            key = {'vault_id': item['vault_id']}
+                            # 実際のプライマリキーを動的に特定
+                            key = {}
+                            
+                            # VaultMetaテーブルのプライマリキーはvault_id（再作成後）
+                            if 'vault_id' in item:
+                                key = {'vault_id': item['vault_id']}
+                            elif 'pool_id' in item:
+                                key = {'pool_id': item['pool_id']}
+                            elif 'id' in item:
+                                key = {'id': item['id']}
+                            elif 'name' in item:
+                                key = {'name': item['name']}
+                            elif 'symbol' in item:
+                                key = {'symbol': item['symbol']}
+                            else:
+                                # 利用可能なキーを表示してエラー
+                                available_keys = list(item.keys())
+                                print(f"   ❌ プライマリキーが見つかりません。利用可能なキー: {available_keys}")
+                                continue
+                            
                             batch_writer.delete_item(Key=key)
                             deleted_count += 1
 
@@ -1233,6 +1297,142 @@ def execute_vaultmeta_delete():
     tool = DynamoDBCleanupTool()
     return tool.delete_vaultmeta_all()
 
+def debug_vault_meta_structure():
+    """VaultMetaテーブルの構造をデバッグ表示（vault_idがプライマリキー）"""
+    tool = DynamoDBCleanupTool()
+    
+    if not tool.connection_status:
+        print("❌ DynamoDBに接続できません")
+        return
+    
+    print("🔍 VaultMetaテーブル構造デバッグ")
+    print("="*50)
+    
+    try:
+        table = tool.dynamodb.Table('VaultMeta')
+        
+        # テーブルスキーマ情報を取得
+        print("📋 テーブルスキーマ情報:")
+        table_info = table.meta.client.describe_table(TableName='VaultMeta')
+        key_schema = table_info['Table']['KeySchema']
+        
+        print("   🔑 キースキーマ:")
+        for key in key_schema:
+            key_name = key['AttributeName']
+            key_type = key['KeyType']  # HASH (パーティションキー) または RANGE (ソートキー)
+            print(f"      {key_name}: {key_type}")
+        
+        # 属性定義を取得
+        attribute_definitions = table_info['Table']['AttributeDefinitions']
+        print("\n   📝 属性定義:")
+        for attr in attribute_definitions:
+            attr_name = attr['AttributeName']
+            attr_type = attr['AttributeType']  # S (文字列), N (数値), B (バイナリ)
+            print(f"      {attr_name}: {attr_type}")
+        
+        # サンプルデータを取得
+        response = table.scan(Limit=5)
+        items = response['Items']
+        
+        if items:
+            print(f"\n📊 取得データ: {len(items)}件")
+            print("\n📋 サンプルデータの構造:")
+            
+            for i, item in enumerate(items, 1):
+                print(f"\n   {i}. アイテム {i}:")
+                for key, value in item.items():
+                    print(f"      {key}: {value} (型: {type(value).__name__})")
+            
+            # 共通のキーを確認
+            all_keys = set()
+            for item in items:
+                all_keys.update(item.keys())
+            
+            print(f"\n📋 全キー一覧: {sorted(list(all_keys))}")
+            
+            # プライマリキーの候補を特定
+            print(f"\n🔑 プライマリキー候補:")
+            primary_key_candidates = [key['AttributeName'] for key in key_schema]
+            for key in primary_key_candidates:
+                if key in all_keys:
+                    print(f"   ✅ {key}: 存在")
+                else:
+                    print(f"   ❌ {key}: 存在しない")
+                    
+        else:
+            print("❌ VaultMetaテーブルにデータがありません")
+            
+    except Exception as e:
+        print(f"❌ エラー: {e}")
+
+def debug_pool_meta_structure():
+    """PoolMetaテーブルの構造をデバッグ表示"""
+    tool = DynamoDBCleanupTool()
+    
+    if not tool.connection_status:
+        print("❌ DynamoDBに接続できません")
+        return
+    
+    print("🔍 PoolMetaテーブル構造デバッグ")
+    print("="*50)
+    
+    try:
+        table = tool.dynamodb.Table('PoolMeta')
+        
+        # テーブルスキーマ情報を取得
+        print("📋 テーブルスキーマ情報:")
+        table_info = table.meta.client.describe_table(TableName='PoolMeta')
+        key_schema = table_info['Table']['KeySchema']
+        
+        print("   🔑 キースキーマ:")
+        for key in key_schema:
+            key_name = key['AttributeName']
+            key_type = key['KeyType']  # HASH (パーティションキー) または RANGE (ソートキー)
+            print(f"      {key_name}: {key_type}")
+        
+        # 属性定義を取得
+        attribute_definitions = table_info['Table']['AttributeDefinitions']
+        print("\n   📝 属性定義:")
+        for attr in attribute_definitions:
+            attr_name = attr['AttributeName']
+            attr_type = attr['AttributeType']  # S (文字列), N (数値), B (バイナリ)
+            print(f"      {attr_name}: {attr_type}")
+        
+        # サンプルデータを取得
+        response = table.scan(Limit=5)
+        items = response['Items']
+        
+        if items:
+            print(f"\n📊 取得データ: {len(items)}件")
+            print("\n📋 サンプルデータの構造:")
+            
+            for i, item in enumerate(items, 1):
+                print(f"\n   {i}. アイテム {i}:")
+                for key, value in item.items():
+                    print(f"      {key}: {value} (型: {type(value).__name__})")
+            
+            # 共通のキーを確認
+            all_keys = set()
+            for item in items:
+                all_keys.update(item.keys())
+            
+            print(f"\n📋 全キー一覧: {sorted(list(all_keys))}")
+            
+            # プライマリキーの候補を特定
+            print(f"\n🔑 プライマリキー候補:")
+            primary_key_candidates = [key['AttributeName'] for key in key_schema]
+            for key in primary_key_candidates:
+                if key in all_keys:
+                    print(f"   ✅ {key}: 存在")
+                else:
+                    print(f"   ❌ {key}: 存在しない")
+                    
+        else:
+            print("❌ PoolMetaテーブルにデータがありません")
+            
+    except Exception as e:
+        print(f"❌ エラー: {e}")
+
 # セル4: 実行コマンド例
 print("🚀 DynamoDB Google Colab用クリーンアップツール準備完了!")
 print("\n📋 利用可能なコマンド:")
@@ -1243,6 +1443,8 @@ print("   - execute_full_cleanup()             # 全データ削除 実行（⚠
 print("   - create_cleanup_comparison()        # クリーンアップ前後の比較チャート")
 print("   - execute_poolmeta_delete()          # PoolMetaテーブル全件削除 実行")
 print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削除 実行")
+print("   - debug_vault_meta_structure()       # VaultMetaテーブル構造デバッグ")
+print("   - debug_pool_meta_structure()        # PoolMetaテーブル構造デバッグ")
 print("\n💡 推奨使用順序:")
 print("   1. show_table_overview()             # 現在の状況確認")
 print("   2. preview_latest_cleanup()          # 削除予定確認")
@@ -1264,3 +1466,7 @@ print("   - PoolLatestは最新のupdated_atで判定")
 print("   - PoolMeta・VaultMetaテーブル対応追加")
 print("   - PoolMeta・VaultMeta専用全件削除機能追加")
 print("   - 削除実行前に確認プロンプトを追加")
+print("   - プライマリキーの動的特定機能追加（vault_id/id/name/symbol対応）")
+print("   - エラーハンドリング改善（利用可能キー表示）")
+print("   - VaultMetaテーブル構造デバッグ機能追加")
+print("   - VaultMetaテーブル再作成対応（vault_idがプライマリキー）")
