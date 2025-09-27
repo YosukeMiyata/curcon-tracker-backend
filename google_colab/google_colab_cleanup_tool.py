@@ -60,7 +60,9 @@ class DynamoDBCleanupTool:
             'CvxCrvStakeMetrics',
             'ConvexPoolMetrics',
             'PriceHistory',
-            'PoolLatest'
+            'PoolLatest',
+            'PoolMeta',
+            'VaultMeta'
         ]
 
         total_items = 0
@@ -155,6 +157,26 @@ class DynamoDBCleanupTool:
                         timestamps.extend([item['timestamp'] for item in response['Items']])
 
                     latest_info = f"最新: {max(timestamps)}" if timestamps else "データなし"
+
+                elif table_name in ['PoolMeta', 'VaultMeta']:
+                    # メタデータテーブルは通常最新のupdated_atまたはtimestampで判定
+                    sample_response = table.scan(Limit=5)
+                    sample_items = sample_response['Items']
+                    if sample_items:
+                        # 最新のupdated_atまたはtimestampを持つデータを特定
+                        items_with_time = []
+                        for item in sample_items:
+                            updated_at = item.get('updated_at', item.get('timestamp', ''))
+                            if updated_at:
+                                items_with_time.append(updated_at)
+
+                        if items_with_time:
+                            latest_time = max(items_with_time)
+                            latest_info = f"最新更新: {latest_time}"
+                        else:
+                            latest_info = f"データ: {len(sample_items)}件"
+                    else:
+                        latest_info = "データなし"
 
                 overview_data.append({
                     'テーブル名': table_name,
@@ -352,6 +374,52 @@ class DynamoDBCleanupTool:
                                     pool_id = item.get('pool_id', 'N/A')
                                     updated_at = item.get('updated_at', 'N/A')
                                     print(f"     {i}. pool_id: {pool_id} | updated: {updated_at}")
+
+                            total_to_delete += len(old_items)
+                        else:
+                            print(f"   総件数: {len(all_items):,}件")
+                            print(f"   保持対象: 全データ {len(all_items):,}件（タイムスタンプなし）")
+                            print(f"   削除対象: 0件")
+                    else:
+                        print(f"   データなし")
+
+                elif table_name in ['PoolMeta', 'VaultMeta']:
+                    # 全データをスキャン
+                    response = table.scan()
+                    all_items = response['Items']
+
+                    # ページネーション対応
+                    while 'LastEvaluatedKey' in response:
+                        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                        all_items.extend(response['Items'])
+
+                    if all_items:
+                        # 最新のupdated_atまたはtimestampを持つデータを特定
+                        items_with_time = []
+                        for item in all_items:
+                            updated_at = item.get('updated_at', item.get('timestamp', ''))
+                            if updated_at:
+                                items_with_time.append((item, updated_at))
+
+                        if items_with_time:
+                            latest_time = max(items_with_time, key=lambda x: x[1])[1]
+                            latest_items = [item for item, time in items_with_time if time == latest_time]
+                            old_items = [item for item, time in items_with_time if time != latest_time]
+
+                            print(f"   総件数: {len(all_items):,}件")
+                            print(f"   最新更新日時: {latest_time}")
+                            print(f"   保持対象: 最新データ {len(latest_items):,}件")
+                            print(f"   削除対象: 古いデータ {len(old_items):,}件")
+
+                            if old_items:
+                                print(f"   削除予定の古いデータ:")
+                                for i, item in enumerate(old_items, 1):
+                                    if table_name == 'PoolMeta':
+                                        item_id = item.get('pool_id', 'N/A')
+                                    else:  # VaultMeta
+                                        item_id = item.get('vault_id', 'N/A')
+                                    updated_at = item.get('updated_at', 'N/A')
+                                    print(f"     {i}. {table_name[:-4].lower()}_id: {item_id} | updated: {updated_at}")
 
                             total_to_delete += len(old_items)
                         else:
@@ -652,6 +720,74 @@ class DynamoDBCleanupTool:
                         if confirm:
                             print(f"   ✅ {table_name}: データなし")
 
+                elif table_name in ['PoolMeta', 'VaultMeta']:
+                    # 全データをスキャン
+                    response = table.scan()
+                    all_items = response['Items']
+
+                    # ページネーション対応
+                    while 'LastEvaluatedKey' in response:
+                        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                        all_items.extend(response['Items'])
+
+                    if all_items:
+                        # 最新のupdated_atまたはtimestampを持つデータを特定
+                        items_with_time = []
+                        for item in all_items:
+                            updated_at = item.get('updated_at', item.get('timestamp', ''))
+                            if updated_at:
+                                items_with_time.append((item, updated_at))
+
+                        if items_with_time:
+                            # 最新のupdated_atを取得
+                            latest_time = max(items_with_time, key=lambda x: x[1])[1]
+                            items_to_delete = [item for item, time in items_with_time if time != latest_time]
+
+                            if confirm:
+                                print(f"   📅 最新更新日時: {latest_time}")
+                                print(f"   📊 総データ数: {len(all_items):,}件")
+                                print(f"   🎯 削除対象: 古いデータ {len(items_to_delete):,}件")
+                                print(f"   ✅ 保持対象: 最新データ {len(all_items) - len(items_to_delete):,}件")
+                        else:
+                            items_to_delete = []
+                            if confirm:
+                                print(f"   📊 総データ数: {len(all_items):,}件")
+                                print(f"   ✅ 保持対象: 全データ {len(all_items):,}件（タイムスタンプなし）")
+                                print(f"   🎯 削除対象: 0件")
+
+                        # バッチ削除実行
+                        if items_to_delete:
+                            deleted_count = 0
+
+                            for i in range(0, len(items_to_delete), 25):
+                                batch = items_to_delete[i:i+25]
+
+                                with table.batch_writer() as batch_writer:
+                                    for item in batch:
+                                        if table_name == 'PoolMeta':
+                                            key = {'pool_id': item['pool_id']}
+                                        else:  # VaultMeta
+                                            key = {'vault_id': item['vault_id']}
+                                        batch_writer.delete_item(Key=key)
+                                        deleted_count += 1
+
+                                # 進捗表示
+                                if confirm and len(items_to_delete) > 50 and deleted_count % 25 == 0:
+                                    progress = (deleted_count / len(items_to_delete)) * 100
+                                    print(f"   🔄 進捗: {deleted_count:,}/{len(items_to_delete):,} ({progress:.1f}%)")
+
+                                time.sleep(0.1)
+
+                            if confirm:
+                                print(f"   ✅ {table_name}: {deleted_count:,}件削除完了")
+                            total_deleted += deleted_count
+                        else:
+                            if confirm:
+                                print(f"   ✅ {table_name}: 削除対象なし")
+                    else:
+                        if confirm:
+                            print(f"   ✅ {table_name}: データなし")
+
                 else:
                     # CvxStakeMetrics, CvxCrvStakeMetrics用の処理
                     partition_key = table_config['partition_key']
@@ -825,6 +961,148 @@ class DynamoDBCleanupTool:
 
         return total_deleted
 
+    def delete_poolmeta_all(self, confirm=True):
+        """PoolMetaテーブル全件削除機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print("🗑️ PoolMetaテーブル全件削除機能")
+            print("⚠️ PoolMetaテーブルの全データが削除されます")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input("PoolMetaテーブルの全データを削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("✅ PoolMetaテーブル全件削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print("❌ PoolMetaテーブル削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        try:
+            table = self.dynamodb.Table('PoolMeta')
+            
+            # テーブルの全データをスキャン
+            response = table.scan()
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response['Items'])
+
+            if items:
+                if confirm:
+                    print(f"   📊 削除対象: {len(items):,}件")
+
+                # バッチ削除
+                deleted_count = 0
+
+                for i in range(0, len(items), 25):
+                    batch = items[i:i+25]
+
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            key = {'pool_id': item['pool_id']}
+                            batch_writer.delete_item(Key=key)
+                            deleted_count += 1
+
+                    # 進捗表示
+                    if confirm and len(items) > 100 and deleted_count % 100 == 0:
+                        progress = (deleted_count / len(items)) * 100
+                        print(f"   🔄 進捗: {deleted_count:,}/{len(items):,} ({progress:.1f}%)")
+
+                    time.sleep(0.1)  # レート制限対策
+
+                if confirm:
+                    print(f"   ✅ PoolMetaテーブル: {deleted_count:,}件削除完了")
+                return deleted_count
+            else:
+                if confirm:
+                    print(f"   ✅ PoolMetaテーブル: データなし")
+                return 0
+
+        except Exception as e:
+            if confirm:
+                print(f"   ❌ PoolMetaテーブル削除エラー: {e}")
+            return False
+
+    def delete_vaultmeta_all(self, confirm=True):
+        """VaultMetaテーブル全件削除機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print("🗑️ VaultMetaテーブル全件削除機能")
+            print("⚠️ VaultMetaテーブルの全データが削除されます")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input("VaultMetaテーブルの全データを削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("✅ VaultMetaテーブル全件削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print("❌ VaultMetaテーブル削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        try:
+            table = self.dynamodb.Table('VaultMeta')
+            
+            # テーブルの全データをスキャン
+            response = table.scan()
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response['Items'])
+
+            if items:
+                if confirm:
+                    print(f"   📊 削除対象: {len(items):,}件")
+
+                # バッチ削除
+                deleted_count = 0
+
+                for i in range(0, len(items), 25):
+                    batch = items[i:i+25]
+
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            key = {'vault_id': item['vault_id']}
+                            batch_writer.delete_item(Key=key)
+                            deleted_count += 1
+
+                    # 進捗表示
+                    if confirm and len(items) > 100 and deleted_count % 100 == 0:
+                        progress = (deleted_count / len(items)) * 100
+                        print(f"   🔄 進捗: {deleted_count:,}/{len(items):,} ({progress:.1f}%)")
+
+                    time.sleep(0.1)  # レート制限対策
+
+                if confirm:
+                    print(f"   ✅ VaultMetaテーブル: {deleted_count:,}件削除完了")
+                return deleted_count
+            else:
+                if confirm:
+                    print(f"   ✅ VaultMetaテーブル: データなし")
+                return 0
+
+        except Exception as e:
+            if confirm:
+                print(f"   ❌ VaultMetaテーブル削除エラー: {e}")
+            return False
+
     def create_cleanup_chart(self):
         """クリーンアップ前後のデータ件数比較チャート"""
         if not self.connection_status:
@@ -834,7 +1112,7 @@ class DynamoDBCleanupTool:
         print("📊 クリーンアップ前後のデータ件数比較チャート作成中...")
 
         # クリーンアップ前のデータ件数
-        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'PoolLatest']
+        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'PoolLatest', 'PoolMeta', 'VaultMeta']
         before_counts = []
         after_counts = []
 
@@ -945,6 +1223,16 @@ def create_cleanup_comparison():
     tool = DynamoDBCleanupTool()
     return tool.create_cleanup_chart()
 
+def execute_poolmeta_delete():
+    """PoolMetaテーブル全件削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_poolmeta_all()
+
+def execute_vaultmeta_delete():
+    """VaultMetaテーブル全件削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_vaultmeta_all()
+
 # セル4: 実行コマンド例
 print("🚀 DynamoDB Google Colab用クリーンアップツール準備完了!")
 print("\n📋 利用可能なコマンド:")
@@ -953,11 +1241,16 @@ print("   - preview_latest_cleanup()           # 最新データ保持クリー�
 print("   - execute_latest_cleanup()           # 最新データ保持クリーンアップ 実行")
 print("   - execute_full_cleanup()             # 全データ削除 実行（⚠️危険⚠️）")
 print("   - create_cleanup_comparison()        # クリーンアップ前後の比較チャート")
+print("   - execute_poolmeta_delete()          # PoolMetaテーブル全件削除 実行")
+print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削除 実行")
 print("\n💡 推奨使用順序:")
 print("   1. show_table_overview()             # 現在の状況確認")
 print("   2. preview_latest_cleanup()          # 削除予定確認")
 print("   3. execute_latest_cleanup()          # クリーンアップ実行")
 print("   4. create_cleanup_comparison()       # 結果確認")
+print("\n🗑️ メタデータテーブル削除:")
+print("   - execute_poolmeta_delete()          # PoolMetaテーブル全件削除")
+print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削除")
 print("\n⚠️ 安全機能:")
 print("   - 最新データは必ず保持")
 print("   - PoolLatest: 最新のupdated_atを持つデータのみ保持")
@@ -968,4 +1261,6 @@ print("\n🔧 修正内容:")
 print("   - 本番・テストの判別を削除")
 print("   - convex_ec2_complete.py統一版に対応")
 print("   - PoolLatestは最新のupdated_atで判定")
+print("   - PoolMeta・VaultMetaテーブル対応追加")
+print("   - PoolMeta・VaultMeta専用全件削除機能追加")
 print("   - 削除実行前に確認プロンプトを追加")
