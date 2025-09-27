@@ -593,7 +593,8 @@ class DynamoDBComprehensiveViewer:
                 print(f"   📋 カラム一覧: {list(df.columns)}")
 
                 # 数値変換（Decimal型対応）
-                numeric_columns = ['pool_id', 'tvl', 'apr', 'apy', 'fee', 'volume_24h']
+                # pool_idは文字列IDなので数値変換から除外
+                numeric_columns = ['tvl', 'apr', 'apy', 'fee', 'volume_24h']
                 for col in numeric_columns:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -668,7 +669,8 @@ class DynamoDBComprehensiveViewer:
                 print(f"   📋 カラム一覧: {list(df.columns)}")
 
                 # 数値変換（Decimal型対応）
-                numeric_columns = ['vault_id', 'tvl', 'apr', 'apy', 'fee', 'volume_24h', 'total_supply']
+                # vault_idは文字列IDなので数値変換から除外
+                numeric_columns = ['tvl', 'apr', 'apy', 'fee', 'volume_24h', 'total_supply']
                 for col in numeric_columns:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -1801,6 +1803,54 @@ def check_vault_meta_fields():
     else:
         print("❌ VaultMetaデータが見つかりません")
 
+def test_pool_id_display():
+    """pool_idフィールドの表示テスト（修正確認用）"""
+    viewer = DynamoDBComprehensiveViewer()
+    
+    print("🔍 PoolMetaのpool_idフィールド表示テスト")
+    print("="*50)
+    
+    df = viewer.get_pool_meta_data(limit=20)
+    
+    if not df.empty:
+        print(f"📊 取得データ: {len(df)}件")
+        
+        # pool_idカラムの確認
+        if 'pool_id' in df.columns:
+            print(f"✅ pool_idカラムが存在します")
+            
+            # pool_idの値とデータ型を確認
+            pool_ids = df['pool_id'].dropna()
+            print(f"📋 pool_idの値（最初の10件）:")
+            for i, pool_id in enumerate(pool_ids.head(10), 1):
+                data_type = type(pool_id).__name__
+                print(f"  {i:2d}. {pool_id} (型: {data_type})")
+            
+            # 数値と文字列のpool_idを分類
+            numeric_ids = []
+            string_ids = []
+            
+            for pool_id in pool_ids:
+                try:
+                    float(pool_id)
+                    numeric_ids.append(pool_id)
+                except (ValueError, TypeError):
+                    string_ids.append(pool_id)
+            
+            print(f"\n📊 pool_idの分類:")
+            print(f"   数値型のpool_id: {len(numeric_ids)}件")
+            print(f"   文字列型のpool_id: {len(string_ids)}件")
+            
+            if string_ids:
+                print(f"   文字列型の例: {string_ids[:5]}")
+            if numeric_ids:
+                print(f"   数値型の例: {numeric_ids[:5]}")
+                
+        else:
+            print("❌ pool_idカラムが見つかりません")
+    else:
+        print("❌ PoolMetaデータが見つかりません")
+
 # セル4: 実行コマンド例
 print("🚀 DynamoDB包括的ビューアー準備完了!")
 print("\n📋 利用可能なコマンド:")
@@ -1825,6 +1875,7 @@ print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
 print("   - analyze_table_fields()              # 全テーブルのフィールド構造分析")
 print("   - check_pool_meta_fields()            # PoolMetaフィールド詳細確認")
 print("   - check_vault_meta_fields()           # VaultMetaフィールド詳細確認")
+print("   - test_pool_id_display()              # pool_idフィールド表示テスト（修正確認用）")
 print("\n💡 使用例:")
 print("   # 基本的な分析")
 print("   full_analysis()")
@@ -1850,6 +1901,7 @@ print("\n   # フィールド構造の確認")
 print("   analyze_table_fields()")
 print("   check_pool_meta_fields()")
 print("   check_vault_meta_fields()")
+print("   test_pool_id_display()  # pool_id表示テスト")
 print("\n📁 エクスポート機能:")
 print("   Google Colabでは自動的にダウンロードが開始されます")
 print("   ローカル環境ではファイルが保存されます")
@@ -1861,3 +1913,4 @@ print("   - VaultMetaテーブル: ボルトの詳細メタ情報（全件取得
 print("   - 包括的なトレンド分析チャート（6つのサブプロット）")
 print("   - 全データエクスポート機能（制限なし）")
 print("   - フィールド構造分析機能（全フィールド確認）")
+print("   - pool_id/vault_idフィールドの文字列ID対応（修正済み）")
