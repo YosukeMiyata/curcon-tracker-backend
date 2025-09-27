@@ -78,6 +78,20 @@ class DynamoDBComprehensiveViewer:
                     'key_attr': 'symbol',
                     'key_value': None,  # 複数のトークンがあるため
                     'sort_key': 'timestamp'
+                },
+                'PoolMeta': {
+                    'name': 'プールメタデータ',
+                    'description': 'プールの詳細メタ情報',
+                    'key_attr': 'pool_id',
+                    'key_value': None,  # 複数のプールがあるため
+                    'sort_key': None  # メタデータのみ
+                },
+                'VaultMeta': {
+                    'name': 'ボルトメタデータ',
+                    'description': 'ボルトの詳細メタ情報',
+                    'key_attr': 'vault_id',
+                    'key_value': None,  # 複数のボルトがあるため
+                    'sort_key': None  # メタデータのみ
                 }
             }
             self.connection_status = True
@@ -535,6 +549,156 @@ class DynamoDBComprehensiveViewer:
             print(f"❌ PriceHistoryデータ取得エラー: {e}")
             return pd.DataFrame()
 
+    def get_pool_meta_data(self, limit=5000):
+        """PoolMetaテーブルのメタデータを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('PoolMeta')
+
+            # 大量データ対応のため、ページネーション処理を追加
+            all_items = []
+            scan_params = {'Limit': min(limit, 1000)}  # DynamoDBの1回のスキャン上限
+            
+            print(f"🔍 PoolMetaテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+            
+            # 最初のページのデータを追加
+            all_items.extend(response['Items'])
+            
+            # ページネーション処理
+            while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                remaining_limit = limit - len(all_items)
+                if remaining_limit <= 0:
+                    break
+                    
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(remaining_limit, 1000)
+                
+                response = table.scan(**scan_params)
+                all_items.extend(response['Items'])
+                
+                print(f"   📊 取得中... {len(all_items)}件")
+            
+            # 指定されたlimitで切り詰め
+            all_items = all_items[:limit]
+
+            if all_items:
+                print(f"   📊 PoolMetaデータ取得: {len(all_items)}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in all_items]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['pool_id', 'tvl', 'apr', 'apy', 'fee', 'volume_24h']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+
+                # タイムスタンプを日時型に変換（存在する場合）
+                if 'timestamp' in df.columns:
+                    try:
+                        df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    except Exception as e:
+                        try:
+                            df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                            if df['datetime'].dt.tz is not None:
+                                df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        except Exception as e2:
+                            print(f"⚠️ 日時変換でエラー: {e2}")
+                            df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
+                print(f"📊 PoolMetaデータ取得完了: {len(df)}件")
+                return df
+            else:
+                print("❌ PoolMetaデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ PoolMetaデータ取得エラー: {e}")
+            return pd.DataFrame()
+
+    def get_vault_meta_data(self, limit=5000):
+        """VaultMetaテーブルのメタデータを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('VaultMeta')
+
+            # 大量データ対応のため、ページネーション処理を追加
+            all_items = []
+            scan_params = {'Limit': min(limit, 1000)}  # DynamoDBの1回のスキャン上限
+            
+            print(f"🔍 VaultMetaテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+            
+            # 最初のページのデータを追加
+            all_items.extend(response['Items'])
+            
+            # ページネーション処理
+            while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                remaining_limit = limit - len(all_items)
+                if remaining_limit <= 0:
+                    break
+                    
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(remaining_limit, 1000)
+                
+                response = table.scan(**scan_params)
+                all_items.extend(response['Items'])
+                
+                print(f"   📊 取得中... {len(all_items)}件")
+            
+            # 指定されたlimitで切り詰め
+            all_items = all_items[:limit]
+
+            if all_items:
+                print(f"   📊 VaultMetaデータ取得: {len(all_items)}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in all_items]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['vault_id', 'tvl', 'apr', 'apy', 'fee', 'volume_24h', 'total_supply']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+
+                # タイムスタンプを日時型に変換（存在する場合）
+                if 'timestamp' in df.columns:
+                    try:
+                        df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    except Exception as e:
+                        try:
+                            df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                            if df['datetime'].dt.tz is not None:
+                                df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        except Exception as e2:
+                            print(f"⚠️ 日時変換でエラー: {e2}")
+                            df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
+                print(f"📊 VaultMetaデータ取得完了: {len(df)}件")
+                return df
+            else:
+                print("❌ VaultMetaデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ VaultMetaデータ取得エラー: {e}")
+            return pd.DataFrame()
+
     def display_data_preview(self, df, title, max_rows=5):
         """データのプレビューを表示（CSV出力と同じ項目順序）"""
         if df.empty:
@@ -560,6 +724,12 @@ class DynamoDBComprehensiveViewer:
         elif 'asset' in df.columns or 'rate' in df.columns:
             # PriceHistoryデータ
             df = self.organize_price_history_columns(df)
+        elif 'pool_id' in df.columns and title == 'PoolMetaデータ':
+            # PoolMetaデータ
+            df = self.organize_pool_meta_columns(df)
+        elif 'vault_id' in df.columns and title == 'VaultMetaデータ':
+            # VaultMetaデータ
+            df = self.organize_vault_meta_columns(df)
 
         preview_df = df.head(max_rows)
         display(preview_df)
@@ -1065,6 +1235,52 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_pool_meta_columns(self, df):
+        """PoolMetaデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（PoolMeta用）
+        desired_columns = [
+            'timezone', 'timestamp', 'pool_id', 'name', 'symbol', 'tvl', 
+            'apr', 'apy', 'fee', 'volume_24h', 'tokens', 'description', 
+            'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_vault_meta_columns(self, df):
+        """VaultMetaデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（VaultMeta用）
+        desired_columns = [
+            'timezone', 'timestamp', 'vault_id', 'name', 'symbol', 'tvl', 
+            'apr', 'apy', 'fee', 'volume_24h', 'total_supply', 'underlying_asset', 
+            'strategy', 'description', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
     def export_to_csv(self, days=7):
         """データをCSVファイルにエクスポート（Google Colab自動ダウンロード対応）"""
         print(f"📁 過去{days}日間のデータをCSVエクスポート中...")
@@ -1075,6 +1291,8 @@ class DynamoDBComprehensiveViewer:
         pools_df = self.get_pools_data(limit=5000, days=days)
         pool_latest_df = self.get_pool_latest_data(limit=1000)
         price_history_df = self.get_price_history_data(limit=5000, days=days)
+        pool_meta_df = self.get_pool_meta_data(limit=5000)
+        vault_meta_df = self.get_vault_meta_data(limit=5000)
 
         # CSVファイル保存（Google Colab用）
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1148,6 +1366,30 @@ class DynamoDBComprehensiveViewer:
             if colab_available:
                 files.download(filename)
 
+        if not pool_meta_df.empty:
+            filename = f'pool_meta_data_{timestamp}.csv'
+            # PoolMetaデータのカラム順序を整理
+            pool_meta_df_organized = self.organize_pool_meta_columns(pool_meta_df)
+            pool_meta_df_organized.to_csv(filename, index=False)
+            print(f"✅ PoolMetaデータ: {filename} ({len(pool_meta_df)}件)")
+            print(f"📋 PoolMetaカラム順序: {list(pool_meta_df_organized.columns)}")
+            downloaded_files.append(filename)
+
+            if colab_available:
+                files.download(filename)
+
+        if not vault_meta_df.empty:
+            filename = f'vault_meta_data_{timestamp}.csv'
+            # VaultMetaデータのカラム順序を整理
+            vault_meta_df_organized = self.organize_vault_meta_columns(vault_meta_df)
+            vault_meta_df_organized.to_csv(filename, index=False)
+            print(f"✅ VaultMetaデータ: {filename} ({len(vault_meta_df)}件)")
+            print(f"📋 VaultMetaカラム順序: {list(vault_meta_df_organized.columns)}")
+            downloaded_files.append(filename)
+
+            if colab_available:
+                files.download(filename)
+
         if downloaded_files:
             if colab_available:
                 print("📊 CSVエクスポート完了! 以下のファイルが自動ダウンロードされました:")
@@ -1186,6 +1428,12 @@ class DynamoDBComprehensiveViewer:
         elif table_type.lower() in ['pricehistory', 'price_history']:
             df = self.get_price_history_data(limit=5000, days=days)
             filename = f'price_history_data_{timestamp}.csv'
+        elif table_type.lower() in ['poolmeta', 'pool_meta']:
+            df = self.get_pool_meta_data(limit=5000)
+            filename = f'pool_meta_data_{timestamp}.csv'
+        elif table_type.lower() in ['vaultmeta', 'vault_meta']:
+            df = self.get_vault_meta_data(limit=5000)
+            filename = f'vault_meta_data_{timestamp}.csv'
         else:
             print(f"❌ 不明なテーブルタイプ: {table_type}")
             return
@@ -1211,6 +1459,14 @@ class DynamoDBComprehensiveViewer:
             elif table_type.lower() in ['pricehistory', 'price_history']:
                 df = self.organize_price_history_columns(df)
                 print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
+            # PoolMetaデータの場合はカラム順序を整理
+            elif table_type.lower() in ['poolmeta', 'pool_meta']:
+                df = self.organize_pool_meta_columns(df)
+                print(f"📋 PoolMetaカラム順序: {list(df.columns)}")
+            # VaultMetaデータの場合はカラム順序を整理
+            elif table_type.lower() in ['vaultmeta', 'vault_meta']:
+                df = self.organize_vault_meta_columns(df)
+                print(f"📋 VaultMetaカラム順序: {list(df.columns)}")
             
             df.to_csv(filename, index=False)
             print(f"✅ {table_type}データ: {filename} ({len(df)}件)")
@@ -1237,12 +1493,16 @@ class DynamoDBComprehensiveViewer:
         pools_df = self.get_pools_data(limit=10)
         pool_latest_df = self.get_pool_latest_data(limit=10)
         price_history_df = self.get_price_history_data(limit=10)
+        pool_meta_df = self.get_pool_meta_data(limit=10)
+        vault_meta_df = self.get_vault_meta_data(limit=10)
 
         self.display_data_preview(cvx_df, "CVXデータ")
         self.display_data_preview(cvxcrv_df, "cvxCRVデータ")
         self.display_data_preview(pools_df, "プールデータ")
         self.display_data_preview(pool_latest_df, "PoolLatestデータ")
         self.display_data_preview(price_history_df, "PriceHistoryデータ")
+        self.display_data_preview(pool_meta_df, "PoolMetaデータ")
+        self.display_data_preview(vault_meta_df, "VaultMetaデータ")
 
         # 3. 投資機会分析
         self.find_best_opportunities()
@@ -1323,6 +1583,224 @@ def show_price_history_data(limit=20, symbol=None):
         print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "PriceHistoryデータ", max_rows=limit)
 
+def show_pool_meta_data(limit=100):
+    """PoolMetaデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_pool_meta_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_pool_meta_columns(df)
+        print(f"📋 PoolMetaカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "PoolMetaデータ", max_rows=min(limit, 20))
+
+def show_vault_meta_data(limit=20):
+    """VaultMetaデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_vault_meta_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_vault_meta_columns(df)
+        print(f"📋 VaultMetaカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "VaultMetaデータ", max_rows=limit)
+
+def export_pool_meta_data():
+    """PoolMetaデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('pool_meta')
+
+def export_vault_meta_data():
+    """VaultMetaデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('vault_meta')
+
+def get_all_pool_meta_data():
+    """PoolMetaテーブルの全データを取得（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    return viewer.get_pool_meta_data(limit=999999)
+
+def get_all_vault_meta_data():
+    """VaultMetaテーブルの全データを取得（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    return viewer.get_vault_meta_data(limit=999999)
+
+def export_all_pool_meta_data():
+    """PoolMetaテーブルの全データをエクスポート（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_pool_meta_data(limit=999999)
+    
+    if not df.empty:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'pool_meta_all_data_{timestamp}.csv'
+        
+        # カラム順序を整理
+        df = viewer.organize_pool_meta_columns(df)
+        df.to_csv(filename, index=False)
+        print(f"✅ PoolMeta全データ: {filename} ({len(df)}件)")
+        
+        try:
+            from google.colab import files
+            files.download(filename)
+            print(f"📊 PoolMeta全データのダウンロードが完了しました!")
+        except ImportError:
+            print(f"📊 PoolMeta全データが{filename}に保存されました!")
+    else:
+        print("❌ PoolMetaデータが見つかりませんでした。")
+
+def export_all_vault_meta_data():
+    """VaultMetaテーブルの全データをエクスポート（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_vault_meta_data(limit=999999)
+    
+    if not df.empty:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'vault_meta_all_data_{timestamp}.csv'
+        
+        # カラム順序を整理
+        df = viewer.organize_vault_meta_columns(df)
+        df.to_csv(filename, index=False)
+        print(f"✅ VaultMeta全データ: {filename} ({len(df)}件)")
+        
+        try:
+            from google.colab import files
+            files.download(filename)
+            print(f"📊 VaultMeta全データのダウンロードが完了しました!")
+        except ImportError:
+            print(f"📊 VaultMeta全データが{filename}に保存されました!")
+    else:
+        print("❌ VaultMetaデータが見つかりませんでした。")
+
+def analyze_table_fields():
+    """全テーブルのフィールド構造を分析"""
+    viewer = DynamoDBComprehensiveViewer()
+    
+    print("🔍 テーブルフィールド構造分析")
+    print("="*60)
+    
+    # 各テーブルからサンプルデータを取得してフィールドを確認
+    tables_to_analyze = [
+        ('PoolMeta', viewer.get_pool_meta_data, viewer.organize_pool_meta_columns),
+        ('VaultMeta', viewer.get_vault_meta_data, viewer.organize_vault_meta_columns),
+        ('PoolLatest', viewer.get_pool_latest_data, viewer.organize_pool_latest_columns),
+        ('PriceHistory', lambda limit: viewer.get_price_history_data(limit=limit), viewer.organize_price_history_columns),
+        ('ConvexPoolMetrics', lambda limit: viewer.get_pools_data(limit=limit), viewer.organize_pool_metrics_columns),
+        ('CvxStakeMetrics', lambda limit: viewer.get_cvx_data(limit=limit), viewer.organize_cvx_columns),
+        ('CvxCrvStakeMetrics', lambda limit: viewer.get_cvxcrv_data(limit=limit), viewer.organize_cvxcrv_columns)
+    ]
+    
+    for table_name, get_func, organize_func in tables_to_analyze:
+        print(f"\n📊 {table_name}テーブル")
+        print("-" * 40)
+        
+        try:
+            # サンプルデータを取得
+            df = get_func(limit=5)
+            
+            if not df.empty:
+                # カラム順序を整理
+                df_organized = organize_func(df)
+                
+                print(f"   総フィールド数: {len(df_organized.columns)}")
+                print(f"   フィールド一覧:")
+                
+                for i, col in enumerate(df_organized.columns, 1):
+                    # データ型を確認
+                    sample_value = df_organized[col].iloc[0] if len(df_organized) > 0 else None
+                    data_type = type(sample_value).__name__ if sample_value is not None else 'None'
+                    
+                    # 非null値の数を確認
+                    non_null_count = df_organized[col].notna().sum()
+                    total_count = len(df_organized)
+                    
+                    print(f"     {i:2d}. {col:<25} ({data_type:<10}) 非null: {non_null_count}/{total_count}")
+                
+                # サンプルデータの最初の行を表示
+                if len(df_organized) > 0:
+                    print(f"   サンプルデータ（最初の行）:")
+                    for col in df_organized.columns[:5]:  # 最初の5フィールドのみ表示
+                        value = df_organized[col].iloc[0]
+                        if isinstance(value, str) and len(str(value)) > 50:
+                            value = str(value)[:47] + "..."
+                        print(f"     {col}: {value}")
+                    if len(df_organized.columns) > 5:
+                        print(f"     ... 他{len(df_organized.columns) - 5}フィールド")
+            else:
+                print(f"   ❌ データが見つかりません")
+                
+        except Exception as e:
+            print(f"   ❌ エラー: {e}")
+
+def check_pool_meta_fields():
+    """PoolMetaテーブルのフィールド詳細確認"""
+    viewer = DynamoDBComprehensiveViewer()
+    
+    print("🔍 PoolMetaテーブル フィールド詳細分析")
+    print("="*50)
+    
+    df = viewer.get_pool_meta_data(limit=10)
+    
+    if not df.empty:
+        print(f"📊 取得データ: {len(df)}件")
+        print(f"📋 全フィールド数: {len(df.columns)}")
+        print(f"📋 フィールド一覧:")
+        
+        for i, col in enumerate(df.columns, 1):
+            # データ型とサンプル値を確認
+            sample_values = df[col].dropna().head(3).tolist()
+            data_type = df[col].dtype
+            non_null_count = df[col].notna().sum()
+            
+            print(f"  {i:2d}. {col:<20} | 型: {str(data_type):<15} | 非null: {non_null_count}/{len(df)}")
+            
+            if sample_values:
+                print(f"      サンプル値: {sample_values}")
+            else:
+                print(f"      サンプル値: [全てnull]")
+            print()
+        
+        # カラム順序整理後の確認
+        df_organized = viewer.organize_pool_meta_columns(df)
+        print(f"📋 整理後のフィールド順序:")
+        for i, col in enumerate(df_organized.columns, 1):
+            print(f"  {i:2d}. {col}")
+    else:
+        print("❌ PoolMetaデータが見つかりません")
+
+def check_vault_meta_fields():
+    """VaultMetaテーブルのフィールド詳細確認"""
+    viewer = DynamoDBComprehensiveViewer()
+    
+    print("🔍 VaultMetaテーブル フィールド詳細分析")
+    print("="*50)
+    
+    df = viewer.get_vault_meta_data(limit=10)
+    
+    if not df.empty:
+        print(f"📊 取得データ: {len(df)}件")
+        print(f"📋 全フィールド数: {len(df.columns)}")
+        print(f"📋 フィールド一覧:")
+        
+        for i, col in enumerate(df.columns, 1):
+            # データ型とサンプル値を確認
+            sample_values = df[col].dropna().head(3).tolist()
+            data_type = df[col].dtype
+            non_null_count = df[col].notna().sum()
+            
+            print(f"  {i:2d}. {col:<20} | 型: {str(data_type):<15} | 非null: {non_null_count}/{len(df)}")
+            
+            if sample_values:
+                print(f"      サンプル値: {sample_values}")
+            else:
+                print(f"      サンプル値: [全てnull]")
+            print()
+        
+        # カラム順序整理後の確認
+        df_organized = viewer.organize_vault_meta_columns(df)
+        print(f"📋 整理後のフィールド順序:")
+        for i, col in enumerate(df_organized.columns, 1):
+            print(f"  {i:2d}. {col}")
+    else:
+        print("❌ VaultMetaデータが見つかりません")
+
 # セル4: 実行コマンド例
 print("🚀 DynamoDB包括的ビューアー準備完了!")
 print("\n📋 利用可能なコマンド:")
@@ -1336,8 +1814,17 @@ print("   - export_cvxcrv_data(7)               # cvxCRVデータのみエクス
 print("   - export_pools_data(7)                # プールデータのみエクスポート")
 print("   - export_pool_latest_data()           # PoolLatestデータのみエクスポート")
 print("   - export_price_history_data(7)        # PriceHistoryデータのみエクスポート")
+print("   - export_pool_meta_data()             # PoolMetaデータのみエクスポート")
+print("   - export_vault_meta_data()            # VaultMetaデータのみエクスポート")
+print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
+print("   - export_all_vault_meta_data()        # VaultMeta全データエクスポート（制限なし）")
 print("   - show_pool_latest_data(20)           # PoolLatestデータを表示")
 print("   - show_price_history_data(20, 'CVX')  # PriceHistoryデータを表示（シンボル指定可能）")
+print("   - show_pool_meta_data(100)            # PoolMetaデータを表示")
+print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
+print("   - analyze_table_fields()              # 全テーブルのフィールド構造分析")
+print("   - check_pool_meta_fields()            # PoolMetaフィールド詳細確認")
+print("   - check_vault_meta_fields()           # VaultMetaフィールド詳細確認")
 print("\n💡 使用例:")
 print("   # 基本的な分析")
 print("   full_analysis()")
@@ -1347,15 +1834,30 @@ print("\n   # 過去30日の全データを自動ダウンロード")
 print("   export_recent_data(30)")
 print("\n   # PoolLatestデータを確認")
 print("   show_pool_latest_data(50)")
+print("\n   # PoolMetaデータを確認（大量データ対応）")
+print("   show_pool_meta_data(500)")
 print("\n   # CVXの価格履歴を確認")
 print("   show_price_history_data(100, 'CVX')")
 print("\n   # 特定のテーブルデータのみをダウンロード")
 print("   export_pool_latest_data()")
 print("   export_price_history_data(30)")
+print("   export_pool_meta_data()")
+print("   export_vault_meta_data()")
+print("\n   # 全データをエクスポート（制限なし）")
+print("   export_all_pool_meta_data()")
+print("   export_all_vault_meta_data()")
+print("\n   # フィールド構造の確認")
+print("   analyze_table_fields()")
+print("   check_pool_meta_fields()")
+print("   check_vault_meta_fields()")
 print("\n📁 エクスポート機能:")
 print("   Google Colabでは自動的にダウンロードが開始されます")
 print("   ローカル環境ではファイルが保存されます")
 print("\n🆕 新機能:")
 print("   - PoolLatestテーブル: 各プールの最新状態データ")
 print("   - PriceHistoryテーブル: トークン価格の履歴データ")
+print("   - PoolMetaテーブル: プールの詳細メタ情報（全件取得対応）")
+print("   - VaultMetaテーブル: ボルトの詳細メタ情報（全件取得対応）")
 print("   - 包括的なトレンド分析チャート（6つのサブプロット）")
+print("   - 全データエクスポート機能（制限なし）")
+print("   - フィールド構造分析機能（全フィールド確認）")
