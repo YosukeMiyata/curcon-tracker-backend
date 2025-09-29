@@ -56,7 +56,7 @@ def display_pool_factory_mapping(items):
         pool_factory_data.append({
             'Pool': pool_name,
             'factory_id': factory_id,
-            'mapping': f'"{pool_name}" : "{factory_id}"'
+            'mapping': f'"{pool_name}" : "{factory_id}",'
         })
     
     # factory_idでソート（空文字列は最後に）

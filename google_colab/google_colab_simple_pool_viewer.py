@@ -31,7 +31,7 @@ def show_pool_factory_mapping():
             factory_id = item.get('factory_id', '')
             if factory_id == 'N/A' or not factory_id:
                 factory_id = ''
-            all_pools.append(f'"{pool_name}" : "{factory_id}"')
+            all_pools.append(f'"{pool_name}" : "{factory_id}",')
         
         # ソートして表示（空文字列は最後に）
         all_pools.sort(key=lambda x: (x.endswith('" : ""'), x))
