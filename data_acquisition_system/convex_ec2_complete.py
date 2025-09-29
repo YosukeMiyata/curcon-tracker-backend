@@ -34,7 +34,8 @@ from dotenv import load_dotenv
 # AWS関連のインポート
 try:
     import boto3
-    from botocore.exceptions import ClientError, NoCredentialsError
+    from botocore.exceptions import ClientError
+    from boto3.dynamodb.conditions import Attr
     AWS_AVAILABLE = True
 except ImportError:
     AWS_AVAILABLE = False
@@ -52,6 +53,10 @@ class ConvexEC2Complete:
         # 基本設定
         self.setup_logging()
         self.setup_directories()
+        
+        # 人力対応表ファイルパス
+        self.manual_mapping_file = Path("/home/ubuntu/convex-scraper/manual_pool_mapping.json")
+        self.failed_matching_file = Path("/home/ubuntu/convex-scraper/failed_pool_matching.json")
         
         # 実行統計
         self.is_running = False
@@ -650,12 +655,21 @@ class ConvexEC2Complete:
             self.logger.error(f"❌ Curve API取得エラー: {e}")
             return None
 
-    def find_factory_id_for_pool(self, pool_name, token_symbols, api_data):
+    def find_factory_id_for_pool(self, pool_name, token_symbols, api_data, used_factory_ids=None):
         """トークンベースのマッチングでAPIデータのIDを特定"""
         if not api_data:
             return None
+        
+        if used_factory_ids is None:
+            used_factory_ids = set()
             
         try:
+            # 1. まず人力対応表をチェック
+            manual_factory_id = self._check_manual_mapping(pool_name, used_factory_ids)
+            if manual_factory_id:
+                self.logger.info(f"✅ 人力対応表マッチング成功: {pool_name} -> ID: {manual_factory_id}")
+                return manual_factory_id
+            
             # 検索プール名を+で分割してトークンを取得
             search_tokens = self._split_pool_name(pool_name)
             if not search_tokens:
@@ -667,13 +681,17 @@ class ConvexEC2Complete:
             for pool in api_data.get('pools', []):
                 pool_name_api = pool.get('name', '')
                 pool_symbol = pool.get('symbol', '')
+                pool_id = pool.get('id')
+                
+                # 既に使用済みのfactory_idはスキップ
+                if pool_id in used_factory_ids:
+                    continue
                 
                 # Convexプール名を[/\s\-:]で分割
                 convex_tokens = self._split_convex_name(pool_name_api)
                 
                 # トークンベースのマッチングをチェック
                 if self._tokens_match_improved(search_tokens, convex_tokens):
-                    pool_id = pool.get('id')
                     self.logger.info(f"✅ マッチング成功: {pool_name} -> {pool_name_api} (ID: {pool_id})")
                     return pool_id
                 
@@ -681,7 +699,6 @@ class ConvexEC2Complete:
                 if pool_symbol:
                     convex_tokens_symbol = self._split_convex_name(pool_symbol)
                     if self._tokens_match_improved(search_tokens, convex_tokens_symbol):
-                        pool_id = pool.get('id')
                         self.logger.info(f"✅ シンボルマッチング成功: {pool_name} -> {pool_symbol} (ID: {pool_id})")
                         return pool_id
             
@@ -689,20 +706,26 @@ class ConvexEC2Complete:
             for vault in api_data.get('vaults', []):
                 vault_name = vault.get('name', '')
                 vault_symbol = vault.get('symbol', '')
+                vault_id = vault.get('id')
+                
+                # 既に使用済みのfactory_idはスキップ
+                if vault_id in used_factory_ids:
+                    continue
                 
                 # Vaultの場合も同様のトークンマッチング
                 convex_tokens_vault = self._split_convex_name(vault_name)
                 if self._tokens_match_improved(search_tokens, convex_tokens_vault):
-                    vault_id = vault.get('id')
                     self.logger.info(f"✅ Vaultマッチング成功: {pool_name} -> {vault_name} (ID: {vault_id})")
                     return vault_id
                 
                 if vault_symbol:
                     convex_tokens_vault_symbol = self._split_convex_name(vault_symbol)
                     if self._tokens_match_improved(search_tokens, convex_tokens_vault_symbol):
-                        vault_id = vault.get('id')
                         self.logger.info(f"✅ Vaultシンボルマッチング成功: {pool_name} -> {vault_symbol} (ID: {vault_id})")
                         return vault_id
+            
+            # マッチング失敗時は失敗プールテーブルに保存
+            self._save_failed_matching(pool_name, token_symbols)
             
             self.logger.info(f"❌ マッチング失敗: {pool_name} -> 検索トークン: {search_tokens}")
             return None
@@ -720,10 +743,31 @@ class ConvexEC2Complete:
                 # 特殊文字を除去してクリーンアップ
                 clean_token = token.replace('​', '').replace(' ', '').strip()
                 if clean_token:
-                    tokens.append(clean_token.upper())
+                    # トークン正規化：3Crv → 3CRV, sdFXN → SDFXN
+                    normalized_token = self._normalize_token_symbol(clean_token)
+                    tokens.append(normalized_token)
             return tokens
         except:
             return []
+    
+    def _normalize_token_symbol(self, token):
+        """トークンシンボルを正規化"""
+        import re
+        # 大文字に変換
+        token = token.upper()
+        
+        # 特殊な正規化ルール
+        # 3Crv → 3CRV
+        if token == '3CRV':
+            return '3CRV'
+        # sdFXN → SDFXN
+        if token.startswith('SD') and len(token) > 2:
+            return token
+        # yCRV → YCRV
+        if token == 'YCRV':
+            return 'YCRV'
+        
+        return token
 
     def _split_convex_name(self, convex_name):
         """Convexプール名を[/\s\-:]で分割してトークンを取得"""
@@ -734,14 +778,21 @@ class ConvexEC2Complete:
             
             # 空文字と一般的な単語を除去してクリーンアップ
             clean_tokens = []
-            skip_words = {'curve', 'fi', 'factory', 'pool', 'crypto', 'stable', 'v2', 'v3', 'ng', 'twocrypto', 'tricrypto', 'crvusd'}
+            skip_words = {
+                'curve', 'fi', 'factory', 'pool', 'crypto', 'stable', 'v2', 'v3', 'ng', 
+                'twocrypto', 'tricrypto', 'crvusd', 'metapool', 'plain', 'usd', 'btc', 
+                'eth', 'plain', 'pool', 'factory', 'crypto', 'stable', 'metapool'
+            }
             
             for token in tokens:
                 clean_token = token.strip()
                 if clean_token and clean_token.lower() not in skip_words:
                     # 数字のみのトークンは除外
                     if not clean_token.isdigit():
-                        clean_tokens.append(clean_token.upper())
+                        # 括弧内の内容を除去（例: "FRAX/USDC (FRAXBP)" → "FRAX/USDC"）
+                        clean_token = re.sub(r'\([^)]*\)', '', clean_token).strip()
+                        if clean_token:
+                            clean_tokens.append(clean_token.upper())
             
             return clean_tokens
         except:
@@ -758,9 +809,161 @@ class ConvexEC2Complete:
         # 検索トークンのすべてが含まれている必要がある
         for search_token in search_tokens:
             if search_token not in convex_tokens_set:
-                return False
+                # 柔軟なマッチング：類似トークンをチェック
+                if not self._flexible_token_match(search_token, convex_tokens_set):
+                    return False
         
         return True
+    
+    def _flexible_token_match(self, search_token, convex_tokens_set):
+        """柔軟なトークンマッチング（類似トークンの考慮）"""
+        # 限定的なマッピングのみ許可（重複を防ぐため）
+        token_mappings = {
+            '3CRV': ['3CRV'],  # 3Crvは3CRVのみ（USDC/USDT/DAIは除外）
+            'SDFXN': ['SDFXN', 'FXN'],  # sdFXNはFXNの変種
+            'YCRV': ['YCRV', 'CRV'],  # yCRVはCRVの変種
+        }
+        
+        # マッピングをチェック
+        if search_token in token_mappings:
+            for mapped_token in token_mappings[search_token]:
+                if mapped_token in convex_tokens_set:
+                    return True
+        
+        # 部分マッチングは除外（重複の原因となるため）
+        return False
+
+    def _check_manual_mapping(self, pool_name, used_factory_ids):
+        """人力対応表からfactory_idを検索"""
+        try:
+            if not self.manual_mapping_file.exists():
+                return None
+            
+            # JSONファイルを読み込み
+            with open(self.manual_mapping_file, 'r', encoding='utf-8') as f:
+                mappings = json.load(f)
+            
+            # プール名で検索
+            if pool_name in mappings:
+                mapping = mappings[pool_name]
+                
+                # シンプル形式（文字列）か詳細形式（オブジェクト）かを判定
+                if isinstance(mapping, str):
+                    # シンプル形式: "pool_name": "factory_id"
+                    factory_id = mapping
+                else:
+                    # 詳細形式: "pool_name": {"factory_id": "...", "status": "...", ...}
+                    factory_id = mapping.get('factory_id')
+                    
+                    # 有効期限をチェック
+                    valid_until = mapping.get('valid_until')
+                    if valid_until:
+                        if datetime.now() > datetime.fromisoformat(valid_until):
+                            self.logger.warning(f"⚠️ 人力対応表の有効期限切れ: {pool_name}")
+                            return None
+                    
+                    # ステータスをチェック
+                    status = mapping.get('status', 'active')
+                    if status != 'active':
+                        return None
+                
+                # 既に使用済みのfactory_idはスキップ
+                if factory_id in used_factory_ids:
+                    return None
+                
+                return factory_id
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ 人力対応表検索エラー: {e}")
+            return None
+
+    def _save_failed_matching(self, pool_name, token_symbols):
+        """マッチング失敗プールをJSONファイルに保存"""
+        try:
+            # 既存の失敗プールデータを読み込み
+            failed_pools = {}
+            if self.failed_matching_file.exists():
+                with open(self.failed_matching_file, 'r', encoding='utf-8') as f:
+                    failed_pools = json.load(f)
+            
+            # プール情報を更新
+            if pool_name in failed_pools:
+                # 既存エントリの更新
+                failed_pools[pool_name]['last_seen'] = datetime.now().isoformat()
+                failed_pools[pool_name]['failure_count'] = failed_pools[pool_name].get('failure_count', 0) + 1
+            else:
+                # 新規エントリとして保存
+                failed_pools[pool_name] = {
+                    'token_symbols': token_symbols,
+                    'first_seen': datetime.now().isoformat(),
+                    'last_seen': datetime.now().isoformat(),
+                    'failure_count': 1,
+                    'status': 'pending'  # pending, resolved, ignored
+                }
+                self.logger.info(f"📝 マッチング失敗プールを記録: {pool_name}")
+            
+            # JSONファイルに保存
+            with open(self.failed_matching_file, 'w', encoding='utf-8') as f:
+                json.dump(failed_pools, f, ensure_ascii=False, indent=2)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 失敗プール保存エラー: {e}")
+
+    def add_manual_mapping(self, pool_name, factory_id, description="", valid_until=None):
+        """人力対応表に新しいマッピングを追加"""
+        try:
+            # 既存の人力対応表を読み込み
+            mappings = {}
+            if self.manual_mapping_file.exists():
+                with open(self.manual_mapping_file, 'r', encoding='utf-8') as f:
+                    mappings = json.load(f)
+            
+            # 新しいマッピングを追加
+            mappings[pool_name] = {
+                'factory_id': factory_id,
+                'description': description,
+                'created_at': datetime.now().isoformat(),
+                'created_by': 'manual',
+                'status': 'active'
+            }
+            
+            if valid_until:
+                mappings[pool_name]['valid_until'] = valid_until
+            
+            # JSONファイルに保存
+            with open(self.manual_mapping_file, 'w', encoding='utf-8') as f:
+                json.dump(mappings, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"✅ 人力対応表に追加: {pool_name} -> {factory_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ 人力対応表追加エラー: {e}")
+            return False
+
+    def get_failed_matching_pools(self, status='pending'):
+        """マッチング失敗プールの一覧を取得"""
+        try:
+            if not self.failed_matching_file.exists():
+                return []
+            
+            with open(self.failed_matching_file, 'r', encoding='utf-8') as f:
+                failed_pools = json.load(f)
+            
+            # ステータスでフィルタリング
+            filtered_pools = []
+            for pool_name, pool_data in failed_pools.items():
+                if pool_data.get('status', 'pending') == status:
+                    pool_data['pool_name'] = pool_name
+                    filtered_pools.append(pool_data)
+            
+            return filtered_pools
+            
+        except Exception as e:
+            self.logger.error(f"❌ 失敗プール取得エラー: {e}")
+            return []
 
     def _normalize_symbol(self, symbol):
         """シンボルを正規化（大文字小文字統一、記号除去）"""
@@ -890,6 +1093,7 @@ class ConvexEC2Complete:
             
             updated_count = 0
             matched_count = 0
+            used_factory_ids = set()  # 使用済みのfactory_idを追跡
             
             for item in items:
                 pool_name = item.get('Pool', '')
@@ -897,12 +1101,13 @@ class ConvexEC2Complete:
                 pool_id = item.get('pool_id', '')
                 
                 # factory_idを検索
-                factory_id = self.find_factory_id_for_pool(pool_name, token_symbols, api_data)
+                factory_id = self.find_factory_id_for_pool(pool_name, token_symbols, api_data, used_factory_ids)
                 
                 if factory_id:
                     # factory_idを追加して更新
                     item['factory_id'] = str(factory_id)
                     table.put_item(Item=item)
+                    used_factory_ids.add(factory_id)  # 使用済みに追加
                     matched_count += 1
                     self.logger.info(f"✅ factory_id追加: {pool_name} -> ID: {factory_id}")
                 else:

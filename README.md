@@ -200,10 +200,19 @@ python-dateutil==2.8.2  # 日付処理
 
 ## 📚 ドキュメント
 
-- **[EC2クイックスタートガイド](ec2_quick_start.md)**: EC2の迅速なセットアップ
-- **[EC2セットアップガイド](ec2_setup_guide.md)**: 詳細なEC2設定手順
-- **[t3.micro推奨理由](t3_micro_recommendation.md)**: t3.micro選択の正当性分析
-- **[t3.microクイックデプロイ](t3_micro_quick_deploy.md)**: t3.micro用デプロイ手順
+### セットアップ・デプロイメント
+- **[EC2クイックスタートガイド](ec2_deployment/ec2_quick_start.md)**: EC2の迅速なセットアップ
+- **[EC2セットアップガイド](ec2_deployment/ec2_setup_guide.md)**: 詳細なEC2設定手順
+- **[t3.micro推奨理由](ec2_deployment/t3_micro_recommendation.md)**: t3.micro選択の正当性分析
+- **[t3.microクイックデプロイ](ec2_deployment/t3_micro_quick_deploy.md)**: t3.micro用デプロイ手順
+
+### 人力対応表システム
+- **[人力対応表システム詳細](docs/manual_pool_mapping_system.md)**: マッチングロジックとJSONファイル管理の完全ガイド
+- **[クイックリファレンス](docs/manual_mapping_quick_reference.md)**: よく使うコマンドと運用方法
+- **[システムアーキテクチャ](docs/system_architecture.md)**: システム全体の構成とデータフロー
+
+### パフォーマンス・運用
+- **[タイミング改善ガイド](docs/timing_improvement_guide.md)**: スクレイピングタイミングの最適化
 
 ## 🤝 貢献
 
@@ -222,6 +231,13 @@ python-dateutil==2.8.2  # 日付処理
 問題が発生した場合や質問がある場合は、[Issues](https://github.com/YosukeMiyata/curcon-tracker-backend/issues)で報告してください。
 
 ## 🔄 更新履歴
+
+- **v1.1.0**: 人力対応表システム追加
+  - JSONファイルベースの人力対応表システム
+  - マッチング失敗プールの自動記録
+  - リアルタイム更新機能
+  - 管理ツール（manual_mapping_manager_json.py）
+  - 包括的なドキュメント整備
 
 - **v1.0.0**: 初回リリース
   - Convexデータスクレイピング機能
