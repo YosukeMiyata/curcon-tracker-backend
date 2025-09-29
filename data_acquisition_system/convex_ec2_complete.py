@@ -613,6 +613,19 @@ class ConvexEC2Complete:
             if driver:
                 driver.quit()
 
+    def extract_pool_tokens(self, pool_name):
+        """プール名からトークンシンボルを抽出"""
+        try:
+            # +マークで分割してトークンシンボルを取得
+            tokens = [token.strip() for token in pool_name.split('+')]
+            return tokens if len(tokens) > 1 else []
+        except:
+            return []
+
+    def is_vault_data(self, pool_id):
+        """Vaultデータかどうかを判定（crvusd_(で始まる場合はVault）"""
+        return pool_id.startswith('crvusd_(')
+
     def save_pool_to_latest(self, pool_data, jst_iso_timestamp, jst_created_at):
         """個別プールデータをPoolLatestテーブルに保存（最新データのみ）"""
         if 'PoolLatest' not in self.tables:
@@ -623,6 +636,9 @@ class ConvexEC2Complete:
             pool_name, current_vapr, projected_vapr, vecrv_boost, remarks, tvl = pool_data
             
             pool_id = pool_name.replace(' ', '_').replace('-', '_').replace('​', '').lower()
+            
+            # Vaultデータかどうかを判定
+            is_vault = self.is_vault_data(pool_id)
             
             # 最新データアイテム（パーティションキー: pool_id のみ）
             latest_item = {
@@ -639,8 +655,31 @@ class ConvexEC2Complete:
                 'updated_at': jst_created_at,  # 最新更新日時（日本時間）
                 'timestamp': jst_iso_timestamp,  # 最新タイムスタンプ（日本時間）
                 'data_source': 'convex_ec2_complete',
-                'timezone': 'JST'
+                'timezone': 'JST',
+                'is_vault': is_vault  # Vaultデータかどうかのフラグ
             }
+            
+            # Vaultデータでない場合のみ、追加の検索用項目を設定
+            if not is_vault:
+                # トークンシンボル配列を抽出
+                token_symbols = self.extract_pool_tokens(pool_name)
+                latest_item['token_symbols'] = token_symbols
+                
+                # 正規化された名前（全て小文字）
+                normalized_name = pool_name.lower()
+                latest_item['normalized_name'] = normalized_name
+                
+                # 検索用トークン配列（正規化された名前を+で区切る）
+                search_tokens = [token.lower().strip() for token in normalized_name.split('+')]
+                latest_item['search_tokens'] = search_tokens
+                
+                self.logger.info(f"✅ プールデータ検索項目追加: {pool_name} -> tokens: {token_symbols}")
+            else:
+                # Vaultデータの場合、検索用項目は空リストまたはNone
+                latest_item['token_symbols'] = []
+                latest_item['normalized_name'] = ''
+                latest_item['search_tokens'] = []
+                self.logger.info(f"✅ Vaultデータとして保存: {pool_name}")
             
             # 最新データを上書き保存（同じpool_idの場合は自動的に上書きされる）
             table.put_item(Item=latest_item)
