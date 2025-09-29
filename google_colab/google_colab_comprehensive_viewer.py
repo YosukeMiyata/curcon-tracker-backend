@@ -131,39 +131,67 @@ class DynamoDBComprehensiveViewer:
                 else:
                     # 複数のレコードがあるテーブルの場合、timestampでソートして最新データを取得
                     try:
-                        # 全データをスキャンして最新のtimestampを特定
-                        response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
-                        timestamps = [item['timestamp'] for item in response['Items']]
-
-                        # ページネーション対応
-                        while 'LastEvaluatedKey' in response:
-                            response = table.scan(
-                                ProjectionExpression='#ts',
-                                ExpressionAttributeNames={'#ts': 'timestamp'},
-                                ExclusiveStartKey=response['LastEvaluatedKey']
-                            )
-                            timestamps.extend([item['timestamp'] for item in response['Items']])
-
-                        # 日時文字列を適切にソートして最新を取得
-                        if timestamps:
-                            try:
-                                # ISO8601形式の日時文字列をdatetimeオブジェクトに変換してソート
-                                datetime_objects = []
-                                for ts in timestamps:
-                                    try:
-                                        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                                        datetime_objects.append((dt, ts))
-                                    except:
-                                        # 変換できない場合は文字列として扱う
-                                        datetime_objects.append((datetime.min, ts))
-
-                                # 日時でソートして最新を取得
-                                latest_datetime, latest_timestamp = max(datetime_objects, key=lambda x: x[0])
-                            except Exception as e:
-                                # フォールバック: 文字列の最大値を使用
-                                latest_timestamp = max(timestamps)
+                        # PoolLatestテーブルの場合は特別処理
+                        if table_name == 'PoolLatest':
+                            # PoolLatestテーブルは最新データのみを格納するため、単純にスキャンして最新を取得
+                            response = table.scan(Limit=1)
+                            if response['Items']:
+                                latest_item = convert_decimal_to_float(response['Items'][0])
+                                latest_timestamp = latest_item.get('timestamp', 'N/A')
+                            else:
+                                latest_timestamp = 'N/A'
                         else:
-                            latest_timestamp = 'N/A'
+                            # その他のテーブルの場合、timestampフィールドが存在するかチェック
+                            # まずサンプルデータを取得してtimestampフィールドの存在を確認
+                            sample_response = table.scan(Limit=1)
+                            if sample_response['Items'] and 'timestamp' in sample_response['Items'][0]:
+                                # 全データをスキャンして最新のtimestampを特定
+                                response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
+                                timestamps = [item['timestamp'] for item in response['Items']]
+
+                                # ページネーション対応
+                                while 'LastEvaluatedKey' in response:
+                                    response = table.scan(
+                                        ProjectionExpression='#ts',
+                                        ExpressionAttributeNames={'#ts': 'timestamp'},
+                                        ExclusiveStartKey=response['LastEvaluatedKey']
+                                    )
+                                    timestamps.extend([item['timestamp'] for item in response['Items']])
+
+                                # 日時文字列を適切にソートして最新を取得
+                                if timestamps:
+                                    try:
+                                        # ISO8601形式の日時文字列をdatetimeオブジェクトに変換してソート
+                                        datetime_objects = []
+                                        for ts in timestamps:
+                                            try:
+                                                dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                                                datetime_objects.append((dt, ts))
+                                            except:
+                                                # 変換できない場合は文字列として扱う
+                                                datetime_objects.append((datetime.min, ts))
+
+                                        # 日時でソートして最新を取得
+                                        latest_datetime, latest_timestamp = max(datetime_objects, key=lambda x: x[0])
+                                    except Exception as e:
+                                        # フォールバック: 文字列の最大値を使用
+                                        latest_timestamp = max(timestamps)
+                                else:
+                                    latest_timestamp = 'N/A'
+                            else:
+                                # timestampフィールドが存在しない場合は、単純にスキャンして最新を取得
+                                response = table.scan(Limit=1)
+                                if response['Items']:
+                                    latest_item = convert_decimal_to_float(response['Items'][0])
+                                    # 利用可能な日時フィールドを探す
+                                    for field in ['created_at', 'updated_at', 'datetime']:
+                                        if field in latest_item:
+                                            latest_timestamp = latest_item[field]
+                                            break
+                                    else:
+                                        latest_timestamp = 'N/A'
+                                else:
+                                    latest_timestamp = 'N/A'
                     except Exception as e:
                         print(f"⚠️ {table_name}の最新データ取得でエラー: {e}")
                         latest_timestamp = 'エラー'

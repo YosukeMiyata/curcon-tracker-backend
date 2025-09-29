@@ -626,6 +626,190 @@ class ConvexEC2Complete:
         """Vaultデータかどうかを判定（crvusd_(で始まる場合はVault）"""
         return pool_id.startswith('crvusd_(')
 
+    def get_curve_api_data(self):
+        """Curve APIからプールとVaultデータを取得"""
+        try:
+            # プールデータを取得
+            pools_response = requests.get("https://curve.convexfinance.com/api/curve/pools", timeout=30)
+            pools_response.raise_for_status()
+            pools_data = pools_response.json()
+            
+            # Vaultデータを取得
+            vaults_response = requests.get("https://curve.convexfinance.com/api/curve/lending-vaults", timeout=30)
+            vaults_response.raise_for_status()
+            vaults_data = vaults_response.json()
+            
+            self.logger.info(f"✅ Curve API取得成功: プール {len(pools_data.get('pools', []))}件, Vault {len(vaults_data.get('vaults', []))}件")
+            
+            return {
+                'pools': pools_data.get('pools', []),
+                'vaults': vaults_data.get('vaults', [])
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Curve API取得エラー: {e}")
+            return None
+
+    def find_factory_id_for_pool(self, pool_name, token_symbols, api_data):
+        """トークンベースのマッチングでAPIデータのIDを特定"""
+        if not api_data:
+            return None
+            
+        try:
+            # 検索プール名を+で分割してトークンを取得
+            search_tokens = self._split_pool_name(pool_name)
+            if not search_tokens:
+                return None
+            
+            self.logger.info(f"🔍 マッチング開始: {pool_name} -> 検索トークン: {search_tokens}")
+            
+            # プールデータから検索
+            for pool in api_data.get('pools', []):
+                pool_name_api = pool.get('name', '')
+                pool_symbol = pool.get('symbol', '')
+                
+                # Convexプール名を[/\s\-:]で分割
+                convex_tokens = self._split_convex_name(pool_name_api)
+                
+                # トークンベースのマッチングをチェック
+                if self._tokens_match_improved(search_tokens, convex_tokens):
+                    pool_id = pool.get('id')
+                    self.logger.info(f"✅ マッチング成功: {pool_name} -> {pool_name_api} (ID: {pool_id})")
+                    return pool_id
+                
+                # シンボルでも同様にチェック
+                if pool_symbol:
+                    convex_tokens_symbol = self._split_convex_name(pool_symbol)
+                    if self._tokens_match_improved(search_tokens, convex_tokens_symbol):
+                        pool_id = pool.get('id')
+                        self.logger.info(f"✅ シンボルマッチング成功: {pool_name} -> {pool_symbol} (ID: {pool_id})")
+                        return pool_id
+            
+            # Vaultデータから検索
+            for vault in api_data.get('vaults', []):
+                vault_name = vault.get('name', '')
+                vault_symbol = vault.get('symbol', '')
+                
+                # Vaultの場合も同様のトークンマッチング
+                convex_tokens_vault = self._split_convex_name(vault_name)
+                if self._tokens_match_improved(search_tokens, convex_tokens_vault):
+                    vault_id = vault.get('id')
+                    self.logger.info(f"✅ Vaultマッチング成功: {pool_name} -> {vault_name} (ID: {vault_id})")
+                    return vault_id
+                
+                if vault_symbol:
+                    convex_tokens_vault_symbol = self._split_convex_name(vault_symbol)
+                    if self._tokens_match_improved(search_tokens, convex_tokens_vault_symbol):
+                        vault_id = vault.get('id')
+                        self.logger.info(f"✅ Vaultシンボルマッチング成功: {pool_name} -> {vault_symbol} (ID: {vault_id})")
+                        return vault_id
+            
+            self.logger.info(f"❌ マッチング失敗: {pool_name} -> 検索トークン: {search_tokens}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ factory_id検索エラー: {e}")
+            return None
+
+    def _split_pool_name(self, pool_name):
+        """検索プール名を+で分割してトークンを取得"""
+        try:
+            # +マークで分割し、空文字と記号を除去
+            tokens = []
+            for token in pool_name.split('+'):
+                # 特殊文字を除去してクリーンアップ
+                clean_token = token.replace('​', '').replace(' ', '').strip()
+                if clean_token:
+                    tokens.append(clean_token.upper())
+            return tokens
+        except:
+            return []
+
+    def _split_convex_name(self, convex_name):
+        """Convexプール名を[/\s\-:]で分割してトークンを取得"""
+        try:
+            import re
+            # [/\s\-:]で分割（スラッシュ、空白、ハイフン、コロン）
+            tokens = re.split(r'[/\s\-:]+', convex_name)
+            
+            # 空文字と一般的な単語を除去してクリーンアップ
+            clean_tokens = []
+            skip_words = {'curve', 'fi', 'factory', 'pool', 'crypto', 'stable', 'v2', 'v3', 'ng', 'twocrypto', 'tricrypto', 'crvusd'}
+            
+            for token in tokens:
+                clean_token = token.strip()
+                if clean_token and clean_token.lower() not in skip_words:
+                    # 数字のみのトークンは除外
+                    if not clean_token.isdigit():
+                        clean_tokens.append(clean_token.upper())
+            
+            return clean_tokens
+        except:
+            return []
+
+    def _tokens_match_improved(self, search_tokens, convex_tokens):
+        """改善されたトークンマッチング: 検索トークンがすべてConvexトークンに含まれているかチェック"""
+        if not search_tokens or not convex_tokens:
+            return False
+        
+        # 検索トークンがすべてConvexトークンに含まれているかチェック
+        convex_tokens_set = set(convex_tokens)
+        
+        # 検索トークンのすべてが含まれている必要がある
+        for search_token in search_tokens:
+            if search_token not in convex_tokens_set:
+                return False
+        
+        return True
+
+    def _normalize_symbol(self, symbol):
+        """シンボルを正規化（大文字小文字統一、記号除去）"""
+        return symbol.replace('​', '').replace('+', '').replace('-', '').replace('_', '').upper()
+
+    def _is_name_match(self, pool_name, api_name):
+        """プール名の一致チェック"""
+        # 特殊文字を除去して比較
+        normalized_pool = self._normalize_symbol(pool_name)
+        normalized_api = self._normalize_symbol(api_name)
+        
+        # 完全一致または一方が他方に含まれる場合
+        return normalized_pool == normalized_api or normalized_pool in normalized_api or normalized_api in normalized_pool
+
+    def _tokens_match(self, tokens1, tokens2):
+        """トークンシンボルの一致チェック"""
+        if not tokens1 or not tokens2:
+            return False
+            
+        # トークンを正規化
+        norm_tokens1 = [self._normalize_symbol(t) for t in tokens1]
+        norm_tokens2 = [self._normalize_symbol(t) for t in tokens2]
+        
+        # 重複を除去
+        set1 = set(norm_tokens1)
+        set2 = set(norm_tokens2)
+        
+        # 共通トークンが50%以上ある場合に一致とみなす
+        common_tokens = set1.intersection(set2)
+        match_ratio = len(common_tokens) / max(len(set1), len(set2))
+        
+        return match_ratio >= 0.5
+
+    def _is_vault_name_match(self, pool_name, vault_symbol, vault_name):
+        """Vault名の一致チェック"""
+        # Vaultの場合は"crvusd_"プレフィックスを考慮
+        if pool_name.startswith('crvusd_('):
+            # 括弧内の内容を抽出
+            import re
+            match = re.search(r'crvusd_\((.*?)\)', pool_name)
+            if match:
+                inner_name = match.group(1).lower()
+                vault_symbol_lower = vault_symbol.lower()
+                vault_name_lower = vault_name.lower()
+                
+                return inner_name in vault_symbol_lower or inner_name in vault_name_lower
+        
+        return False
+
     def save_pool_to_latest(self, pool_data, jst_iso_timestamp, jst_created_at):
         """個別プールデータをPoolLatestテーブルに保存（最新データのみ）"""
         if 'PoolLatest' not in self.tables:
@@ -687,6 +871,52 @@ class ConvexEC2Complete:
             
         except Exception as e:
             self.logger.error(f"❌ PoolLatest保存エラー (pool_id: {pool_id}): {e}")
+            return False
+
+    def update_pool_latest_with_factory_ids(self, api_data):
+        """PoolLatestテーブルの全てのデータにfactory_idを追加"""
+        if 'PoolLatest' not in self.tables or not api_data:
+            self.logger.warning("⚠️ PoolLatestテーブルまたはAPIデータが利用できません")
+            return False
+            
+        try:
+            table = self.tables['PoolLatest']
+            
+            # PoolLatestテーブルの全データを取得
+            response = table.scan()
+            items = response.get('Items', [])
+            
+            self.logger.info(f"📊 PoolLatestテーブルから {len(items)}件のデータを取得")
+            
+            updated_count = 0
+            matched_count = 0
+            
+            for item in items:
+                pool_name = item.get('Pool', '')
+                token_symbols = item.get('token_symbols', [])
+                pool_id = item.get('pool_id', '')
+                
+                # factory_idを検索
+                factory_id = self.find_factory_id_for_pool(pool_name, token_symbols, api_data)
+                
+                if factory_id:
+                    # factory_idを追加して更新
+                    item['factory_id'] = str(factory_id)
+                    table.put_item(Item=item)
+                    matched_count += 1
+                    self.logger.info(f"✅ factory_id追加: {pool_name} -> ID: {factory_id}")
+                else:
+                    # factory_idが見つからない場合はnullを設定
+                    item['factory_id'] = None
+                    table.put_item(Item=item)
+                
+                updated_count += 1
+            
+            self.logger.info(f"✅ PoolLatest更新完了: {updated_count}件中 {matched_count}件のfactory_idを特定")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ PoolLatest factory_id更新エラー: {e}")
             return False
 
     def save_to_dynamodb_jst(self, data):
@@ -816,14 +1046,24 @@ class ConvexEC2Complete:
             if data and data['cvx']['vapr']:
                 convex_saved = self.save_to_dynamodb_jst(data)
             
+            # 5. Curve APIからfactory_idを取得してPoolLatestを更新
+            factory_id_updated = False
+            if convex_saved:
+                self.logger.info("🔍 Curve APIからfactory_idを取得中...")
+                api_data = self.get_curve_api_data()
+                if api_data:
+                    factory_id_updated = self.update_pool_latest_with_factory_ids(api_data)
+            
             # 結果判定
-            if price_saved or convex_saved:
+            if price_saved or convex_saved or factory_id_updated:
                 self.success_count += 1
                 status_msg = []
                 if price_saved:
                     status_msg.append("価格データ")
                 if convex_saved:
                     status_msg.append("Convexデータ")
+                if factory_id_updated:
+                    status_msg.append("factory_id更新")
                 
                 execution_time = time.time() - start_time
                 self.logger.info(f"✅ 完全版ジョブ完了 ({' + '.join(status_msg)}) (実行時間: {execution_time:.2f}秒)")
