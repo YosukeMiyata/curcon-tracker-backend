@@ -627,9 +627,18 @@ class ConvexEC2Complete:
         except:
             return []
 
-    def is_vault_data(self, pool_id):
-        """Vaultデータかどうかを判定（crvusd_(で始まる場合はVault）"""
-        return pool_id.startswith('crvusd_(')
+    def is_vault_data(self, pool_name):
+        """Vaultデータかどうかを判定（Pool名またはpool_idで判定）"""
+        # Pool名で判定: "crvUSD (" で始まる場合
+        if pool_name.startswith('crvUSD ('):
+            return True
+        
+        # pool_idで判定: "crvusd_(" で始まる場合
+        pool_id = pool_name.replace(' ', '_').replace('-', '_').replace('​', '').replace('(', '').replace(')', '').replace(' ', '').lower()
+        if pool_id.startswith('crvusd_('):
+            return True
+            
+        return False
 
     def get_curve_api_data(self):
         """Curve APIからプールとVaultデータを取得"""
@@ -665,10 +674,13 @@ class ConvexEC2Complete:
             
         try:
             # 1. まず人力対応表をチェック
+            self.logger.info(f"🔍 人力対応表チェック開始: {pool_name}")
             manual_factory_id = self._check_manual_mapping(pool_name, used_factory_ids)
             if manual_factory_id:
                 self.logger.info(f"✅ 人力対応表マッチング成功: {pool_name} -> ID: {manual_factory_id}")
                 return manual_factory_id
+            else:
+                self.logger.info(f"❌ 人力対応表マッチング失敗: {pool_name}")
             
             # 検索プール名を+で分割してトークンを取得
             search_tokens = self._split_pool_name(pool_name)
@@ -737,7 +749,12 @@ class ConvexEC2Complete:
     def _split_pool_name(self, pool_name):
         """検索プール名を+で分割してトークンを取得"""
         try:
-            # +マークで分割し、空文字と記号を除去
+            # Vaultデータの場合は完全な文字列をそのまま使用
+            if pool_name.startswith('crvUSD (') and pool_name.endswith(' collateral)'):
+                # Vaultデータは完全な文字列をそのまま返す
+                return [pool_name]
+            
+            # 通常のプールデータは+で分割
             tokens = []
             for token in pool_name.split('+'):
                 # 特殊文字を除去してクリーンアップ
@@ -834,7 +851,7 @@ class ConvexEC2Complete:
         return False
 
     def _check_manual_mapping(self, pool_name, used_factory_ids):
-        """人力対応表からfactory_idを検索"""
+        """人力対応表からfactory_idを検索（改善版：柔軟なマッチング）"""
         try:
             if not self.manual_mapping_file.exists():
                 return None
@@ -843,40 +860,101 @@ class ConvexEC2Complete:
             with open(self.manual_mapping_file, 'r', encoding='utf-8') as f:
                 mappings = json.load(f)
             
-            # プール名で検索
+            # 文字の正規化（ゼロ幅スペースや特殊文字を除去）
+            def normalize_text(text):
+                if not text:
+                    return ""
+                # ゼロ幅スペース、ゼロ幅非結合子、ゼロ幅結合子を除去
+                import re
+                text = re.sub(r'[\u200b\u200c\u200d]', '', text)
+                # その他の特殊文字も除去
+                text = re.sub(r'[^\w\s\+\-\(\)]', '', text)
+                return text.strip()
+            
+            normalized_pool_name = normalize_text(pool_name)
+            
+            # 1. 完全一致で検索（正規化後）
+            for mapping_name, mapping in mappings.items():
+                if normalize_text(mapping_name) == normalized_pool_name:
+                    self.logger.info(f"🔍 正規化完全一致発見: {pool_name} -> {mapping_name}")
+                    factory_id = self._extract_factory_id(mapping, used_factory_ids)
+                    if factory_id:
+                        self.logger.info(f"✅ 正規化完全一致: {pool_name} -> {mapping_name} (ID: {factory_id})")
+                        return factory_id
+                    else:
+                        self.logger.info(f"❌ factory_id抽出失敗: {pool_name} -> {mapping_name}")
+            
+            # 2. 元の文字列での完全一致
             if pool_name in mappings:
-                mapping = mappings[pool_name]
-                
-                # シンプル形式（文字列）か詳細形式（オブジェクト）かを判定
-                if isinstance(mapping, str):
-                    # シンプル形式: "pool_name": "factory_id"
-                    factory_id = mapping
+                self.logger.info(f"🔍 元文字列完全一致発見: {pool_name}")
+                factory_id = self._extract_factory_id(mappings[pool_name], used_factory_ids)
+                if factory_id:
+                    self.logger.info(f"✅ 元文字列完全一致: {pool_name} (ID: {factory_id})")
+                    return factory_id
                 else:
-                    # 詳細形式: "pool_name": {"factory_id": "...", "status": "...", ...}
-                    factory_id = mapping.get('factory_id')
-                    
-                    # 有効期限をチェック
-                    valid_until = mapping.get('valid_until')
-                    if valid_until:
-                        if datetime.now() > datetime.fromisoformat(valid_until):
-                            self.logger.warning(f"⚠️ 人力対応表の有効期限切れ: {pool_name}")
-                            return None
-                    
-                    # ステータスをチェック
-                    status = mapping.get('status', 'active')
-                    if status != 'active':
-                        return None
-                
-                # 既に使用済みのfactory_idはスキップ
-                if factory_id in used_factory_ids:
-                    return None
-                
-                return factory_id
+                    self.logger.info(f"❌ factory_id抽出失敗: {pool_name}")
+            
+            # 3. 部分一致で検索（正規化後）
+            for mapping_name, mapping in mappings.items():
+                normalized_mapping = normalize_text(mapping_name)
+                if normalized_pool_name in normalized_mapping or normalized_mapping in normalized_pool_name:
+                    factory_id = self._extract_factory_id(mapping, used_factory_ids)
+                    if factory_id:
+                        self.logger.info(f"✅ 正規化部分一致: {pool_name} -> {mapping_name} (ID: {factory_id})")
+                        return factory_id
+            
+            # 4. 大文字小文字を無視した部分一致
+            pool_name_lower = normalized_pool_name.lower()
+            for mapping_name, mapping in mappings.items():
+                normalized_mapping_lower = normalize_text(mapping_name).lower()
+                if pool_name_lower in normalized_mapping_lower or normalized_mapping_lower in pool_name_lower:
+                    factory_id = self._extract_factory_id(mapping, used_factory_ids)
+                    if factory_id:
+                        self.logger.info(f"✅ 大文字小文字無視部分一致: {pool_name} -> {mapping_name} (ID: {factory_id})")
+                        return factory_id
             
             return None
             
         except Exception as e:
             self.logger.error(f"❌ 人力対応表検索エラー: {e}")
+            return None
+    
+    def _extract_factory_id(self, mapping, used_factory_ids):
+        """マッピングからfactory_idを抽出し、有効性をチェック"""
+        try:
+            # シンプル形式（文字列）か詳細形式（オブジェクト）かを判定
+            if isinstance(mapping, str):
+                # シンプル形式: "pool_name": "factory_id"
+                factory_id = mapping
+                self.logger.info(f"🔍 シンプル形式factory_id: {factory_id}")
+            else:
+                # 詳細形式: "pool_name": {"factory_id": "...", "status": "...", ...}
+                factory_id = mapping.get('factory_id')
+                self.logger.info(f"🔍 詳細形式factory_id: {factory_id}")
+                
+                # 有効期限をチェック
+                valid_until = mapping.get('valid_until')
+                if valid_until:
+                    if datetime.now() > datetime.fromisoformat(valid_until):
+                        self.logger.warning(f"⚠️ 人力対応表の有効期限切れ")
+                        return None
+                
+                # ステータスをチェック
+                status = mapping.get('status', 'active')
+                if status != 'active':
+                    self.logger.info(f"❌ ステータスが非アクティブ: {status}")
+                    return None
+            
+            # 既に使用済みのfactory_idはスキップ
+            if factory_id in used_factory_ids:
+                self.logger.info(f"❌ 既に使用済みfactory_id: {factory_id} (使用済み: {used_factory_ids})")
+                return None
+            
+            self.logger.info(f"✅ factory_id抽出成功: {factory_id}")
+            return factory_id
+            
+        except Exception as e:
+            self.logger.error(f"❌ factory_id抽出エラー: {e}")
             return None
 
     def _save_failed_matching(self, pool_name, token_symbols):
@@ -1016,16 +1094,23 @@ class ConvexEC2Complete:
     def save_pool_to_latest(self, pool_data, jst_iso_timestamp, jst_created_at):
         """個別プールデータをPoolLatestテーブルに保存（最新データのみ）"""
         if 'PoolLatest' not in self.tables:
+            self.logger.error("❌ PoolLatestテーブルが利用できません")
             return False
             
         try:
             table = self.tables['PoolLatest']
             pool_name, current_vapr, projected_vapr, vecrv_boost, remarks, tvl = pool_data
             
-            pool_id = pool_name.replace(' ', '_').replace('-', '_').replace('​', '').lower()
+            # プールIDの生成を改善（特殊文字を適切に処理）
+            pool_id = pool_name.replace(' ', '_').replace('-', '_').replace('​', '').replace('(', '').replace(')', '').replace(' ', '').lower()
             
-            # Vaultデータかどうかを判定
-            is_vault = self.is_vault_data(pool_id)
+            # Vaultデータかどうかを判定（プール名で判定）
+            is_vault = self.is_vault_data(pool_name)
+            
+            # デバッグ用ログ
+            self.logger.info(f"🔍 PoolLatest保存開始: {pool_name}")
+            self.logger.info(f"   - pool_id: {pool_id}")
+            self.logger.info(f"   - is_vault: {is_vault}")
             
             # 最新データアイテム（パーティションキー: pool_id のみ）
             latest_item = {
@@ -1068,12 +1153,27 @@ class ConvexEC2Complete:
                 latest_item['search_tokens'] = []
                 self.logger.info(f"✅ Vaultデータとして保存: {pool_name}")
             
+            # 既存データの確認（デバッグ用）
+            try:
+                existing_response = table.query(
+                    KeyConditionExpression='pool_id = :pool_id',
+                    ExpressionAttributeValues={':pool_id': pool_id},
+                    Limit=1
+                )
+                existing_count = len(existing_response.get('Items', []))
+                self.logger.info(f"   - 既存データ件数: {existing_count}")
+            except Exception as e:
+                self.logger.warning(f"   - 既存データ確認エラー: {e}")
+            
             # 最新データを上書き保存（同じpool_idの場合は自動的に上書きされる）
             table.put_item(Item=latest_item)
+            self.logger.info(f"✅ PoolLatest保存成功: {pool_name} (ID: {pool_id})")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ PoolLatest保存エラー (pool_id: {pool_id}): {e}")
+            self.logger.error(f"   - エラー詳細: {str(e)}")
+            self.logger.error(f"   - latest_item keys: {list(latest_item.keys())}")
             return False
 
     def update_pool_latest_with_factory_ids(self, api_data):
@@ -1183,38 +1283,83 @@ class ConvexEC2Complete:
             if data['curve_pools'] and 'ConvexPoolMetrics' in self.tables:
                 history_table = self.tables['ConvexPoolMetrics']
                 latest_success_count = 0
+                history_success_count = 0
                 
                 for pool_data in data['curve_pools']:
                     pool_name, current_vapr, projected_vapr, vecrv_boost, remarks, tvl = pool_data
                     
-                    pool_id = pool_name.replace(' ', '_').replace('-', '_').replace('​', '').lower()
+                    # プールIDの生成を改善（特殊文字を適切に処理）
+                    pool_id = pool_name.replace(' ', '_').replace('-', '_').replace('​', '').replace('(', '').replace(')', '').replace(' ', '').lower()
                     
-                    # 1. 履歴テーブル（ConvexPoolMetrics）に保存
-                    history_item = {
-                        'pool_id': pool_id,
-                        'timestamp': jst_iso_timestamp,  # 日本時間
-                        'Pool': pool_name,
-                        'Current_vAPR': current_vapr,
-                        'Projected_vAPR': projected_vapr,
-                        'veCRV_boost': vecrv_boost,
-                        'Remarks': remarks,
-                        'TVL': tvl,
-                        'current_vapr_numeric': self.convert_to_decimal(current_vapr),
-                        'projected_vapr_numeric': self.convert_to_decimal(projected_vapr),
-                        'tvl_numeric': self.convert_to_decimal(tvl),
-                        'created_at': jst_created_at,  # 日本時間
-                        'data_source': 'convex_ec2_complete',
-                        'timezone': 'JST'
-                    }
+                    # デバッグ用ログ: プール情報を詳細に出力
+                    self.logger.info(f"🔍 プール処理開始: {pool_name}")
+                    self.logger.info(f"   - pool_id: {pool_id}")
+                    self.logger.info(f"   - is_vault: {self.is_vault_data(pool_name)}")
+                    self.logger.info(f"   - current_vapr: {current_vapr}")
+                    self.logger.info(f"   - projected_vapr: {projected_vapr}")
+                    self.logger.info(f"   - tvl: {tvl}")
                     
-                    history_table.put_item(Item=history_item)
+                    try:
+                        # factory_idを検索
+                        token_symbols = []
+                        if isinstance(pool_data, dict):
+                            token_symbols = pool_data.get('token_symbols', [])
+                        factory_id = self.find_factory_id_for_pool(pool_name, token_symbols, data, set())
+                        
+                        # 1. 履歴テーブル（ConvexPoolMetrics）に保存
+                        history_item = {
+                            'pool_id': pool_id,
+                            'timestamp': jst_iso_timestamp,  # 日本時間
+                            'Pool': pool_name,
+                            'Current_vAPR': current_vapr,
+                            'Projected_vAPR': projected_vapr,
+                            'veCRV_boost': vecrv_boost,
+                            'Remarks': remarks,
+                            'TVL': tvl,
+                            'current_vapr_numeric': self.convert_to_decimal(current_vapr),
+                            'projected_vapr_numeric': self.convert_to_decimal(projected_vapr),
+                            'tvl_numeric': self.convert_to_decimal(tvl),
+                            'created_at': jst_created_at,  # 日本時間
+                            'data_source': 'convex_ec2_complete',
+                            'timezone': 'JST',
+                            'factory_id': str(factory_id) if factory_id else None
+                        }
+                        
+                        # NoneやNaN値を除去
+                        history_item = {k: v for k, v in history_item.items() if v is not None}
+                        
+                        # 既存データの確認（デバッグ用）
+                        try:
+                            existing_response = history_table.query(
+                                KeyConditionExpression='pool_id = :pool_id',
+                                ExpressionAttributeValues={':pool_id': pool_id},
+                                Limit=1
+                            )
+                            existing_count = len(existing_response.get('Items', []))
+                            self.logger.info(f"   - 既存データ件数: {existing_count}")
+                        except Exception as e:
+                            self.logger.warning(f"   - 既存データ確認エラー: {e}")
+                        
+                        history_table.put_item(Item=history_item)
+                        history_success_count += 1
+                        factory_info = f" (factory_id: {factory_id})" if factory_id else " (factory_id: None)"
+                        self.logger.info(f"✅ ConvexPoolMetrics保存成功: {pool_name} (ID: {pool_id}){factory_info}")
+                        
+                    except Exception as e:
+                        self.logger.error(f"❌ ConvexPoolMetrics保存エラー: {pool_name} -> {e}")
+                        self.logger.error(f"   - エラー詳細: {str(e)}")
+                        self.logger.error(f"   - pool_id: {pool_id}")
+                        self.logger.error(f"   - history_item keys: {list(history_item.keys())}")
                     
                     # 2. 最新テーブル（PoolLatest）に保存
                     if self.save_pool_to_latest(pool_data, jst_iso_timestamp, jst_created_at):
                         latest_success_count += 1
+                        self.logger.info(f"✅ PoolLatest保存成功: {pool_name}")
+                    else:
+                        self.logger.warning(f"⚠️ PoolLatest保存失敗: {pool_name}")
                 
-                self.logger.info(f"✅ Curveプール {len(data['curve_pools'])}件を履歴テーブルに保存しました（JST）")
-                self.logger.info(f"✅ Curveプール {latest_success_count}件を最新テーブル（PoolLatest）に保存しました（JST）")
+                self.logger.info(f"✅ Curveプール {history_success_count}/{len(data['curve_pools'])}件を履歴テーブル（ConvexPoolMetrics）に保存しました（JST）")
+                self.logger.info(f"✅ Curveプール {latest_success_count}/{len(data['curve_pools'])}件を最新テーブル（PoolLatest）に保存しました（JST）")
 
             return True
 

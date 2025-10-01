@@ -272,5 +272,11 @@
   "USDC​+WBTC​+WETH" : "factory-tricrypto-0",
   "FRAX​+FXB_20241231" : "factory-stable-ng-44",
   "WETH​+tacETH" : "factory-stable-ng-428",
-  "sUSD​+crvUSD" : "factory-crvusd-7"
+  "sUSD​+crvUSD" : "factory-crvusd-7",
+  "DOLA​+FRAXBP" : "factory-v2-176",
+  "USDT​+tacUSD" : "factory-stable-ng-445",
+  "ETHFI​+weETH" : "factory-twocrypto-34",
+  "GHO​+USR" : "factory-stable-ng-338",
+  "SDT​+FRAXBP" : "factory-crypto-135",
+  "DOLA​+fxSAVE" : "factory-stable-ng-569"
 }

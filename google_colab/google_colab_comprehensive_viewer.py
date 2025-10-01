@@ -372,7 +372,7 @@ class DynamoDBComprehensiveViewer:
             return pd.DataFrame()
 
     def get_pools_data(self, limit=100, days=None, min_apr=None):
-        """プールデータを取得"""
+        """プールデータを取得（ページネーション対応）"""
         if not self.connection_status:
             return pd.DataFrame()
 
@@ -385,17 +385,42 @@ class DynamoDBComprehensiveViewer:
             if min_apr:
                 filter_conditions.append(Attr('current_vapr_numeric').gte(min_apr))
 
-            scan_params = {'Limit': limit}
+            # ページネーション対応のスキャン処理
+            all_items = []
+            scan_params = {'Limit': min(limit, 1000)}  # DynamoDBの1回のスキャン上限
+            
             if filter_conditions:
                 scan_params['FilterExpression'] = filter_conditions[0]
                 for condition in filter_conditions[1:]:
                     scan_params['FilterExpression'] = scan_params['FilterExpression'] & condition
 
+            print(f"🔍 ConvexPoolMetricsテーブルに接続中... (limit: {limit})")
             response = table.scan(**scan_params)
+            
+            # 最初のページのデータを追加
+            all_items.extend(response['Items'])
+            
+            # ページネーション処理
+            while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                remaining_limit = limit - len(all_items)
+                if remaining_limit <= 0:
+                    break
+                    
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(remaining_limit, 1000)
+                
+                response = table.scan(**scan_params)
+                all_items.extend(response['Items'])
+                
+                print(f"   📊 取得中... {len(all_items)}件")
+            
+            # 指定されたlimitで切り詰め
+            all_items = all_items[:limit]
 
-            if response['Items']:
+            if all_items:
+                print(f"   📊 ConvexPoolMetricsデータ取得: {len(all_items)}件")
                 # Decimal型をfloat型に変換
-                converted_items = [convert_decimal_to_float(item) for item in response['Items']]
+                converted_items = [convert_decimal_to_float(item) for item in all_items]
                 df = pd.DataFrame(converted_items)
 
                 # 数値変換（Decimal型対応）
@@ -447,6 +472,7 @@ class DynamoDBComprehensiveViewer:
 
         except Exception as e:
             print(f"❌ プールデータ取得エラー: {e}")
+            print(f"   詳細: {type(e).__name__}: {str(e)}")
             return pd.DataFrame()
 
     def get_pool_latest_data(self, limit=100, min_apr=None):
@@ -1202,7 +1228,7 @@ class DynamoDBComprehensiveViewer:
         
         # 指定された順序のカラムリスト
         desired_columns = [
-            'timezone', 'timestamp', 'Pool', 'pool_id', 'Current_vAPR', 
+            'timezone', 'timestamp', 'Pool', 'pool_id', 'factory_id', 'Current_vAPR', 
             'Projected_vAPR', 'TVL', 'veCRV_boost', 'Remarks', 
             'current_vapr_numeric', 'projected_vapr_numeric', 'tvl_numeric', 
             'data_source', 'datetime', 'created_at'
@@ -1699,6 +1725,39 @@ def export_all_vault_meta_data():
     else:
         print("❌ VaultMetaデータが見つかりませんでした。")
 
+def export_all_convex_pool_metrics_data():
+    """ConvexPoolMetricsテーブルの全データをエクスポート（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_pools_data(limit=999999)
+    
+    if not df.empty:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'convex_pool_metrics_all_data_{timestamp}.csv'
+        
+        # カラム順序を整理
+        df = viewer.organize_pool_metrics_columns(df)
+        df.to_csv(filename, index=False)
+        print(f"✅ ConvexPoolMetrics全データ: {filename} ({len(df)}件)")
+        
+        try:
+            from google.colab import files
+            files.download(filename)
+            print(f"📊 ConvexPoolMetrics全データのダウンロードが完了しました!")
+        except ImportError:
+            print(f"📊 ConvexPoolMetrics全データが{filename}に保存されました!")
+    else:
+        print("❌ ConvexPoolMetricsデータが見つかりませんでした。")
+
+def show_convex_pool_metrics_data(limit=100):
+    """ConvexPoolMetricsデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_pools_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_pool_metrics_columns(df)
+        print(f"📋 ConvexPoolMetricsカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "ConvexPoolMetricsデータ", max_rows=limit)
+
 def analyze_table_fields():
     """全テーブルのフィールド構造を分析"""
     viewer = DynamoDBComprehensiveViewer()
@@ -1896,10 +1955,12 @@ print("   - export_pool_meta_data()             # PoolMetaデータのみエク�
 print("   - export_vault_meta_data()            # VaultMetaデータのみエクスポート")
 print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
 print("   - export_all_vault_meta_data()        # VaultMeta全データエクスポート（制限なし）")
+print("   - export_all_convex_pool_metrics_data() # ConvexPoolMetrics全データエクスポート（制限なし）")
 print("   - show_pool_latest_data(20)           # PoolLatestデータを表示")
 print("   - show_price_history_data(20, 'CVX')  # PriceHistoryデータを表示（シンボル指定可能）")
 print("   - show_pool_meta_data(100)            # PoolMetaデータを表示")
 print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
+print("   - show_convex_pool_metrics_data(100)  # ConvexPoolMetricsデータを表示")
 print("   - analyze_table_fields()              # 全テーブルのフィールド構造分析")
 print("   - check_pool_meta_fields()            # PoolMetaフィールド詳細確認")
 print("   - check_vault_meta_fields()           # VaultMetaフィールド詳細確認")
@@ -1915,6 +1976,8 @@ print("\n   # PoolLatestデータを確認")
 print("   show_pool_latest_data(50)")
 print("\n   # PoolMetaデータを確認（大量データ対応）")
 print("   show_pool_meta_data(500)")
+print("\n   # ConvexPoolMetricsデータを確認")
+print("   show_convex_pool_metrics_data(100)")
 print("\n   # CVXの価格履歴を確認")
 print("   show_price_history_data(100, 'CVX')")
 print("\n   # 特定のテーブルデータのみをダウンロード")
@@ -1925,6 +1988,7 @@ print("   export_vault_meta_data()")
 print("\n   # 全データをエクスポート（制限なし）")
 print("   export_all_pool_meta_data()")
 print("   export_all_vault_meta_data()")
+print("   export_all_convex_pool_metrics_data()")
 print("\n   # フィールド構造の確認")
 print("   analyze_table_fields()")
 print("   check_pool_meta_fields()")
@@ -1943,3 +2007,5 @@ print("   - 全データエクスポート機能（制限なし）")
 print("   - フィールド構造分析機能（全フィールド確認）")
 print("   - pool_id/vault_idフィールドの文字列ID対応（修正済み）")
 print("   - VaultMetaテーブル再作成対応（vault_idがプライマリキー）")
+print("   - ConvexPoolMetrics全データエクスポート機能（制限なし）")
+print("   - ConvexPoolMetricsデータ表示機能")

@@ -1331,6 +1331,632 @@ class DynamoDBCleanupTool:
             
             return False
 
+    def list_pools(self):
+        """プール一覧表示機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return []
+
+        print("📋 プール一覧表示")
+        print("=" * 60)
+
+        pools_data = []
+
+        try:
+            # PoolLatestテーブルからプール一覧を取得
+            table = self.dynamodb.Table('PoolLatest')
+            response = table.scan()
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response['Items'])
+
+            if items:
+                print(f"📊 総プール数: {len(items):,}件")
+                print()
+
+                for i, item in enumerate(items, 1):
+                    pool_id = item.get('pool_id', 'N/A')
+                    name = item.get('name', 'N/A')
+                    symbol = item.get('symbol', 'N/A')
+                    updated_at = item.get('updated_at', item.get('timestamp', 'N/A'))
+                    
+                    pool_info = {
+                        'index': i,
+                        'pool_id': pool_id,
+                        'name': name,
+                        'symbol': symbol,
+                        'updated_at': updated_at
+                    }
+                    pools_data.append(pool_info)
+
+                    print(f"{i:3d}. Pool ID: {pool_id}")
+                    print(f"     Name: {name}")
+                    print(f"     Symbol: {symbol}")
+                    print(f"     Updated: {updated_at}")
+                    print()
+
+                return pools_data
+            else:
+                print("❌ プールデータがありません")
+                return []
+
+        except Exception as e:
+            print(f"❌ プール一覧取得エラー: {e}")
+            return []
+
+    def delete_individual_pool(self, pool_id, confirm=True):
+        """個別プール削除機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print(f"🗑️ 個別プール削除機能")
+            print(f"🎯 対象プール: {pool_id}")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input(f"プール '{pool_id}' を削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print(f"✅ プール '{pool_id}' の削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print(f"❌ プール '{pool_id}' の削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        # 削除操作を追跡ログに記録
+        caller_info = self.tracker._get_caller_info()
+        additional_data = {
+            'operation': 'individual_pool_delete',
+            'pool_id': pool_id,
+            'confirmation_required': confirm
+        }
+        self.tracker.log_deletion_operation(
+            table_name='PoolLatest',
+            operation='individual_delete',
+            function_name='delete_individual_pool',
+            caller_info=caller_info,
+            additional_data=additional_data
+        )
+
+        total_deleted = 0
+
+        try:
+            # PoolLatestテーブルから該当プールを削除
+            table = self.dynamodb.Table('PoolLatest')
+            
+            # 該当プールのデータを取得
+            response = table.query(
+                KeyConditionExpression=Key('pool_id').eq(pool_id)
+            )
+            
+            if response['Items']:
+                if confirm:
+                    print(f"   📊 削除対象: {len(response['Items']):,}件")
+                
+                # バッチ削除
+                deleted_count = 0
+                
+                for i in range(0, len(response['Items']), 25):
+                    batch = response['Items'][i:i+25]
+                    
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            key = {'pool_id': item['pool_id']}
+                            batch_writer.delete_item(Key=key)
+                            deleted_count += 1
+                    
+                    time.sleep(0.1)  # レート制限対策
+                
+                if confirm:
+                    print(f"   ✅ PoolLatest: {deleted_count:,}件削除完了")
+                total_deleted += deleted_count
+                
+                # 削除完了ログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='PoolLatest',
+                    operation='delete_completed',
+                    function_name='delete_individual_pool',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': deleted_count, 'pool_id': pool_id, 'status': 'success'}
+                )
+            else:
+                if confirm:
+                    print(f"   ✅ PoolLatest: プール '{pool_id}' のデータなし")
+                
+                # 削除対象なしログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='PoolLatest',
+                    operation='delete_completed',
+                    function_name='delete_individual_pool',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': 0, 'pool_id': pool_id, 'status': 'no_data'}
+                )
+
+            # ConvexPoolMetricsテーブルからも該当プールを削除
+            table = self.dynamodb.Table('ConvexPoolMetrics')
+            
+            # 該当プールのデータを取得
+            response = table.query(
+                KeyConditionExpression=Key('pool_id').eq(pool_id)
+            )
+            
+            if response['Items']:
+                if confirm:
+                    print(f"   📊 ConvexPoolMetrics削除対象: {len(response['Items']):,}件")
+                
+                # バッチ削除
+                deleted_count = 0
+                
+                for i in range(0, len(response['Items']), 25):
+                    batch = response['Items'][i:i+25]
+                    
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            key = {
+                                'pool_id': item['pool_id'],
+                                'timestamp': item['timestamp']
+                            }
+                            batch_writer.delete_item(Key=key)
+                            deleted_count += 1
+                    
+                    time.sleep(0.1)  # レート制限対策
+                
+                if confirm:
+                    print(f"   ✅ ConvexPoolMetrics: {deleted_count:,}件削除完了")
+                total_deleted += deleted_count
+            else:
+                if confirm:
+                    print(f"   ✅ ConvexPoolMetrics: プール '{pool_id}' のデータなし")
+
+            if confirm:
+                print(f"\n📊 プール '{pool_id}' 削除完了:")
+                print(f"   削除件数: {total_deleted:,}件")
+                print(f"   対象テーブル: PoolLatest, ConvexPoolMetrics")
+
+            return total_deleted
+
+        except Exception as e:
+            if confirm:
+                print(f"   ❌ プール '{pool_id}' 削除エラー: {e}")
+            
+            # エラーログを記録
+            self.tracker.log_deletion_operation(
+                table_name='PoolLatest',
+                operation='delete_error',
+                function_name='delete_individual_pool',
+                caller_info=caller_info,
+                additional_data={'error': str(e), 'pool_id': pool_id, 'status': 'error'}
+            )
+            
+            return False
+
+    def delete_multiple_pools(self, pool_ids, confirm=True):
+        """複数プール一括削除機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print(f"🗑️ 複数プール一括削除機能")
+            print(f"🎯 対象プール数: {len(pool_ids)}件")
+            print(f"📋 対象プール: {', '.join(pool_ids)}")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input(f"{len(pool_ids)}個のプールを一括削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print(f"✅ {len(pool_ids)}個のプールの一括削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print(f"❌ 複数プールの一括削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        total_deleted = 0
+        success_count = 0
+        error_count = 0
+
+        for i, pool_id in enumerate(pool_ids, 1):
+            if confirm:
+                print(f"\n🔄 処理中 ({i}/{len(pool_ids)}): {pool_id}")
+            
+            result = self.delete_individual_pool(pool_id, confirm=False)
+            
+            if result is not False:
+                total_deleted += result
+                success_count += 1
+                if confirm:
+                    print(f"   ✅ 成功: {result:,}件削除")
+            else:
+                error_count += 1
+                if confirm:
+                    print(f"   ❌ エラー: 削除失敗")
+
+        if confirm:
+            print(f"\n📊 複数プール一括削除完了:")
+            print(f"   成功: {success_count}個のプール")
+            print(f"   エラー: {error_count}個のプール")
+            print(f"   総削除件数: {total_deleted:,}件")
+
+        return total_deleted
+
+    def list_tables(self):
+        """テーブル一覧表示機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return []
+
+        print("📋 テーブル一覧表示")
+        print("=" * 60)
+
+        tables_data = []
+
+        # 対象テーブル一覧
+        tables = [
+            'CvxStakeMetrics',
+            'CvxCrvStakeMetrics', 
+            'ConvexPoolMetrics',
+            'PriceHistory',
+            'PoolLatest',
+            'PoolMeta',
+            'VaultMeta'
+        ]
+
+        for i, table_name in enumerate(tables, 1):
+            try:
+                table = self.dynamodb.Table(table_name)
+                
+                # 件数取得
+                response = table.scan(Select='COUNT')
+                count = response['Count']
+
+                # ページネーション対応で正確な件数を取得
+                while 'LastEvaluatedKey' in response:
+                    response = table.scan(
+                        Select='COUNT',
+                        ExclusiveStartKey=response['LastEvaluatedKey']
+                    )
+                    count += response['Count']
+
+                # 最新データ情報を取得
+                if table_name in ['CvxStakeMetrics', 'CvxCrvStakeMetrics']:
+                    # 特定のパーティションキーで最新データを取得
+                    if table_name == 'CvxStakeMetrics':
+                        partition_key = 'token'
+                        partition_value = 'CVX'
+                    else:  # CvxCrvStakeMetrics
+                        partition_key = 'stake'
+                        partition_value = 'cvxCRV'
+
+                    response = table.query(
+                        KeyConditionExpression=Key(partition_key).eq(partition_value),
+                        ScanIndexForward=False,  # 降順ソート
+                        Limit=1
+                    )
+
+                    if response['Items']:
+                        latest_timestamp = response['Items'][0]['timestamp']
+                        latest_info = f"最新: {latest_timestamp}"
+                    else:
+                        latest_info = "データなし"
+
+                elif table_name in ['ConvexPoolMetrics', 'PriceHistory']:
+                    # 全データをスキャンして最新タイムスタンプを取得
+                    response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
+                    timestamps = [item['timestamp'] for item in response['Items']]
+
+                    # ページネーション対応
+                    while 'LastEvaluatedKey' in response:
+                        response = table.scan(
+                            ProjectionExpression='#ts',
+                            ExpressionAttributeNames={'#ts': 'timestamp'},
+                            ExclusiveStartKey=response['LastEvaluatedKey']
+                        )
+                        timestamps.extend([item['timestamp'] for item in response['Items']])
+
+                    latest_info = f"最新: {max(timestamps)}" if timestamps else "データなし"
+
+                elif table_name == 'PoolLatest':
+                    sample_response = table.scan(Limit=3)
+                    sample_items = sample_response['Items']
+                    if sample_items:
+                        # 最新のupdated_atを持つデータを特定
+                        items_with_time = []
+                        for item in sample_items:
+                            updated_at = item.get('updated_at', item.get('timestamp', ''))
+                            if updated_at:
+                                items_with_time.append(updated_at)
+
+                        if items_with_time:
+                            latest_time = max(items_with_time)
+                            latest_info = f"最新更新: {latest_time}"
+                        else:
+                            latest_info = f"データ: {len(sample_items)}件"
+                    else:
+                        latest_info = "データなし"
+
+                elif table_name in ['PoolMeta', 'VaultMeta']:
+                    # メタデータテーブルは通常最新のupdated_atまたはtimestampで判定
+                    sample_response = table.scan(Limit=5)
+                    sample_items = sample_response['Items']
+                    if sample_items:
+                        # 最新のupdated_atまたはtimestampを持つデータを特定
+                        items_with_time = []
+                        for item in sample_items:
+                            updated_at = item.get('updated_at', item.get('timestamp', ''))
+                            if updated_at:
+                                items_with_time.append(updated_at)
+
+                        if items_with_time:
+                            latest_time = max(items_with_time)
+                            latest_info = f"最新更新: {latest_time}"
+                        else:
+                            latest_info = f"データ: {len(sample_items)}件"
+                    else:
+                        latest_info = "データなし"
+
+                table_info = {
+                    'index': i,
+                    'table_name': table_name,
+                    'count': count,
+                    'latest_info': latest_info
+                }
+                tables_data.append(table_info)
+
+                print(f"{i:2d}. {table_name}")
+                print(f"    件数: {count:,}件")
+                print(f"    状況: {latest_info}")
+                print()
+
+            except Exception as e:
+                print(f"❌ {table_name}: エラー ({e})")
+                table_info = {
+                    'index': i,
+                    'table_name': table_name,
+                    'count': 'エラー',
+                    'latest_info': 'エラー'
+                }
+                tables_data.append(table_info)
+
+        return tables_data
+
+    def delete_individual_table(self, table_name, confirm=True):
+        """個別テーブル全件削除機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print(f"🗑️ 個別テーブル全件削除機能")
+            print(f"🎯 対象テーブル: {table_name}")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input(f"テーブル '{table_name}' の全データを削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print(f"✅ テーブル '{table_name}' の全データ削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print(f"❌ テーブル '{table_name}' の削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        # 削除操作を追跡ログに記録
+        caller_info = self.tracker._get_caller_info()
+        additional_data = {
+            'operation': 'individual_table_delete',
+            'table_name': table_name,
+            'confirmation_required': confirm
+        }
+        self.tracker.log_deletion_operation(
+            table_name=table_name,
+            operation='individual_delete',
+            function_name='delete_individual_table',
+            caller_info=caller_info,
+            additional_data=additional_data
+        )
+
+        try:
+            table = self.dynamodb.Table(table_name)
+            
+            # テーブルの全データをスキャン
+            response = table.scan()
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response['Items'])
+
+            if items:
+                if confirm:
+                    print(f"   📊 削除対象: {len(items):,}件")
+
+                # バッチ削除
+                deleted_count = 0
+
+                for i in range(0, len(items), 25):
+                    batch = items[i:i+25]
+
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            # テーブルごとに適切なキーを設定
+                            key = {}
+                            
+                            if table_name == 'CvxStakeMetrics':
+                                key = {
+                                    'token': item['token'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'CvxCrvStakeMetrics':
+                                key = {
+                                    'stake': item['stake'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'ConvexPoolMetrics':
+                                key = {
+                                    'pool_id': item['pool_id'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'PriceHistory':
+                                key = {
+                                    'asset': item['asset'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'PoolLatest':
+                                key = {
+                                    'pool_id': item['pool_id']
+                                }
+                            elif table_name == 'PoolMeta':
+                                # プライマリキーの候補を順番に試す
+                                if 'pool_id' in item:
+                                    key = {'pool_id': item['pool_id']}
+                                elif 'id' in item:
+                                    key = {'id': item['id']}
+                                elif 'name' in item:
+                                    key = {'name': item['name']}
+                                elif 'symbol' in item:
+                                    key = {'symbol': item['symbol']}
+                                else:
+                                    # 利用可能なキーを表示してエラー
+                                    available_keys = list(item.keys())
+                                    print(f"   ❌ プライマリキーが見つかりません。利用可能なキー: {available_keys}")
+                                    continue
+                            elif table_name == 'VaultMeta':
+                                # VaultMetaテーブルのプライマリキーはvault_id（再作成後）
+                                if 'vault_id' in item:
+                                    key = {'vault_id': item['vault_id']}
+                                elif 'pool_id' in item:
+                                    key = {'pool_id': item['pool_id']}
+                                elif 'id' in item:
+                                    key = {'id': item['id']}
+                                elif 'name' in item:
+                                    key = {'name': item['name']}
+                                elif 'symbol' in item:
+                                    key = {'symbol': item['symbol']}
+                                else:
+                                    # 利用可能なキーを表示してエラー
+                                    available_keys = list(item.keys())
+                                    print(f"   ❌ プライマリキーが見つかりません。利用可能なキー: {available_keys}")
+                                    continue
+                            
+                            if key:
+                                batch_writer.delete_item(Key=key)
+                                deleted_count += 1
+
+                    # 進捗表示
+                    if confirm and len(items) > 100 and deleted_count % 100 == 0:
+                        progress = (deleted_count / len(items)) * 100
+                        print(f"   🔄 進捗: {deleted_count:,}/{len(items):,} ({progress:.1f}%)")
+
+                    time.sleep(0.1)  # レート制限対策
+
+                if confirm:
+                    print(f"   ✅ {table_name}: {deleted_count:,}件削除完了")
+                
+                # 削除完了ログを記録
+                self.tracker.log_deletion_operation(
+                    table_name=table_name,
+                    operation='delete_completed',
+                    function_name='delete_individual_table',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': deleted_count, 'status': 'success'}
+                )
+                
+                return deleted_count
+            else:
+                if confirm:
+                    print(f"   ✅ {table_name}: データなし")
+                
+                # 削除対象なしログを記録
+                self.tracker.log_deletion_operation(
+                    table_name=table_name,
+                    operation='delete_completed',
+                    function_name='delete_individual_table',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': 0, 'status': 'no_data'}
+                )
+                
+                return 0
+
+        except Exception as e:
+            if confirm:
+                print(f"   ❌ {table_name} 削除エラー: {e}")
+            
+            # エラーログを記録
+            self.tracker.log_deletion_operation(
+                table_name=table_name,
+                operation='delete_error',
+                function_name='delete_individual_table',
+                caller_info=caller_info,
+                additional_data={'error': str(e), 'status': 'error'}
+            )
+            
+            return False
+
+    def delete_multiple_tables(self, table_names, confirm=True):
+        """複数テーブル一括削除機能"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print(f"🗑️ 複数テーブル一括削除機能")
+            print(f"🎯 対象テーブル数: {len(table_names)}件")
+            print(f"📋 対象テーブル: {', '.join(table_names)}")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input(f"{len(table_names)}個のテーブルを一括削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print(f"✅ {len(table_names)}個のテーブルの一括削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print(f"❌ 複数テーブルの一括削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        total_deleted = 0
+        success_count = 0
+        error_count = 0
+
+        for i, table_name in enumerate(table_names, 1):
+            if confirm:
+                print(f"\n🔄 処理中 ({i}/{len(table_names)}): {table_name}")
+            
+            result = self.delete_individual_table(table_name, confirm=False)
+            
+            if result is not False:
+                total_deleted += result
+                success_count += 1
+                if confirm:
+                    print(f"   ✅ 成功: {result:,}件削除")
+            else:
+                error_count += 1
+                if confirm:
+                    print(f"   ❌ エラー: 削除失敗")
+
+        if confirm:
+            print(f"\n📊 複数テーブル一括削除完了:")
+            print(f"   成功: {success_count}個のテーブル")
+            print(f"   エラー: {error_count}個のテーブル")
+            print(f"   総削除件数: {total_deleted:,}件")
+
+        return total_deleted
+
     def create_cleanup_chart(self):
         """クリーンアップ前後のデータ件数比較チャート"""
         if not self.connection_status:
@@ -1460,6 +2086,36 @@ def execute_vaultmeta_delete():
     """VaultMetaテーブル全件削除実行"""
     tool = DynamoDBCleanupTool()
     return tool.delete_vaultmeta_all()
+
+def show_pool_list():
+    """プール一覧表示"""
+    tool = DynamoDBCleanupTool()
+    return tool.list_pools()
+
+def delete_single_pool(pool_id):
+    """個別プール削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_individual_pool(pool_id)
+
+def delete_multiple_pools(pool_ids):
+    """複数プール一括削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_multiple_pools(pool_ids)
+
+def show_table_list():
+    """テーブル一覧表示"""
+    tool = DynamoDBCleanupTool()
+    return tool.list_tables()
+
+def delete_single_table(table_name):
+    """個別テーブル全件削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_individual_table(table_name)
+
+def delete_multiple_tables(table_names):
+    """複数テーブル一括削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_multiple_tables(table_names)
 
 def debug_vault_meta_structure():
     """VaultMetaテーブルの構造をデバッグ表示（vault_idがプライマリキー）"""
@@ -1609,6 +2265,14 @@ print("   - execute_poolmeta_delete()          # PoolMetaテーブル全件削�
 print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削除 実行")
 print("   - debug_vault_meta_structure()       # VaultMetaテーブル構造デバッグ")
 print("   - debug_pool_meta_structure()        # PoolMetaテーブル構造デバッグ")
+print("\n🎯 プール個別削除機能:")
+print("   - show_pool_list()                   # プール一覧表示")
+print("   - delete_single_pool(pool_id)       # 個別プール削除実行")
+print("   - delete_multiple_pools(pool_ids)   # 複数プール一括削除実行")
+print("\n🗂️ テーブル個別削除機能:")
+print("   - show_table_list()                 # テーブル一覧表示")
+print("   - delete_single_table(table_name)   # 個別テーブル全件削除実行")
+print("   - delete_multiple_tables(table_names) # 複数テーブル一括削除実行")
 print("\n💡 推奨使用順序:")
 print("   1. show_table_overview()             # 現在の状況確認")
 print("   2. preview_latest_cleanup()          # 削除予定確認")
@@ -1617,6 +2281,26 @@ print("   4. create_cleanup_comparison()       # 結果確認")
 print("\n🗑️ メタデータテーブル削除:")
 print("   - execute_poolmeta_delete()          # PoolMetaテーブル全件削除")
 print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削除")
+print("\n🎯 プール個別削除の使用例:")
+print("   # プール一覧を表示")
+print("   pools = show_pool_list()")
+print("   ")
+print("   # 個別プールを削除")
+print("   delete_single_pool('pool_123')")
+print("   ")
+print("   # 複数プールを一括削除")
+print("   pool_ids = ['pool_123', 'pool_456', 'pool_789']")
+print("   delete_multiple_pools(pool_ids)")
+print("\n🗂️ テーブル個別削除の使用例:")
+print("   # テーブル一覧を表示")
+print("   tables = show_table_list()")
+print("   ")
+print("   # 個別テーブルを全件削除")
+print("   delete_single_table('PoolLatest')")
+print("   ")
+print("   # 複数テーブルを一括削除")
+print("   table_names = ['PoolLatest', 'ConvexPoolMetrics']")
+print("   delete_multiple_tables(table_names)")
 print("\n⚠️ 安全機能:")
 print("   - 最新データは必ず保持")
 print("   - PoolLatest: 最新のupdated_atを持つデータのみ保持")
