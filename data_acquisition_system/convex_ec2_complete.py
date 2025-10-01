@@ -177,7 +177,7 @@ class ConvexEC2Complete:
         try:
             self.dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
             
-            # 全テーブルに接続
+            # 定期実行に関係のある全テーブルに接続
             table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory']
             self.tables = {}
             
@@ -1091,6 +1091,40 @@ class ConvexEC2Complete:
         
         return False
 
+    def clear_pool_latest_table(self):
+        """PoolLatestテーブルの全データを削除してクリーンな状態にする"""
+        if 'PoolLatest' not in self.tables:
+            self.logger.error("❌ PoolLatestテーブルが利用できません")
+            return False
+        
+        try:
+            table = self.tables['PoolLatest']
+            
+            # テーブルの全データをスキャン
+            self.logger.info("🗑️ PoolLatestテーブルをクリア中...")
+            response = table.scan()
+            items = response.get('Items', [])
+            
+            # ページネーション対応（データが多い場合）
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response.get('Items', []))
+            
+            deleted_count = 0
+            
+            # バッチ削除（最大25件ずつ）
+            with table.batch_writer() as batch:
+                for item in items:
+                    batch.delete_item(Key={'pool_id': item['pool_id']})
+                    deleted_count += 1
+            
+            self.logger.info(f"✅ PoolLatestテーブルクリア完了: {deleted_count}件削除")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ PoolLatestテーブルクリアエラー: {e}")
+            return False
+
     def save_pool_to_latest(self, pool_data, jst_iso_timestamp, jst_created_at):
         """個別プールデータをPoolLatestテーブルに保存（最新データのみ）"""
         if 'PoolLatest' not in self.tables:
@@ -1281,11 +1315,35 @@ class ConvexEC2Complete:
 
             # Curveプールデータを履歴テーブル（ConvexPoolMetrics）と最新テーブル（PoolLatest）両方に保存
             if data['curve_pools'] and 'ConvexPoolMetrics' in self.tables:
+                # プールデータとボルトデータを分離
+                pool_data_list = []
+                vault_data_list = []
+                
+                for pool_data in data['curve_pools']:
+                    pool_name = pool_data[0]
+                    if self.is_vault_data(pool_name):
+                        vault_data_list.append(pool_data)
+                    else:
+                        pool_data_list.append(pool_data)
+                
+                # 上から60個のプールと4個のボルトのみ取得
+                filtered_pools = pool_data_list[:60]
+                filtered_vaults = vault_data_list[:4]
+                
+                # 統合して保存
+                filtered_data = filtered_pools + filtered_vaults
+                
+                self.logger.info(f"📊 データフィルタリング: プール {len(pool_data_list)}件 → {len(filtered_pools)}件, ボルト {len(vault_data_list)}件 → {len(filtered_vaults)}件")
+                
+                # PoolLatestテーブルを完全にクリア（クリーンなテーブルにするため）
+                if 'PoolLatest' in self.tables:
+                    self.clear_pool_latest_table()
+                
                 history_table = self.tables['ConvexPoolMetrics']
                 latest_success_count = 0
                 history_success_count = 0
                 
-                for pool_data in data['curve_pools']:
+                for pool_data in filtered_data:
                     pool_name, current_vapr, projected_vapr, vecrv_boost, remarks, tvl = pool_data
                     
                     # プールIDの生成を改善（特殊文字を適切に処理）
@@ -1358,8 +1416,8 @@ class ConvexEC2Complete:
                     else:
                         self.logger.warning(f"⚠️ PoolLatest保存失敗: {pool_name}")
                 
-                self.logger.info(f"✅ Curveプール {history_success_count}/{len(data['curve_pools'])}件を履歴テーブル（ConvexPoolMetrics）に保存しました（JST）")
-                self.logger.info(f"✅ Curveプール {latest_success_count}/{len(data['curve_pools'])}件を最新テーブル（PoolLatest）に保存しました（JST）")
+                self.logger.info(f"✅ Curveプール {history_success_count}/{len(filtered_data)}件を履歴テーブル（ConvexPoolMetrics）に保存しました（JST）")
+                self.logger.info(f"✅ Curveプール {latest_success_count}/{len(filtered_data)}件を最新テーブル（PoolLatest）に保存しました（JST）")
 
             return True
 
