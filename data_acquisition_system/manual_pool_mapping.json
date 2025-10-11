@@ -278,5 +278,10 @@
   "ETHFI​+weETH" : "factory-twocrypto-34",
   "GHO​+USR" : "factory-stable-ng-338",
   "SDT​+FRAXBP" : "factory-crypto-135",
-  "DOLA​+fxSAVE" : "factory-stable-ng-569"
+  "DOLA​+fxSAVE" : "factory-stable-ng-569",
+  "crvUSD+FXS" : "factory-twocrypto-20",
+  "iUSD+USDC" : "factory-stable-ng-465",
+  "msUSD+fxUSD" : "factory-stable-ng-512",
+  "USDFI+USDaf+ebUSD+BOLD" : "factory-stable-ng-564",
+  "USDFI+frxUSD" : "factory-stable-ng-527"
 }

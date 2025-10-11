@@ -664,6 +664,26 @@ class ConvexEC2Complete:
             self.logger.error(f"❌ Curve API取得エラー: {e}")
             return None
 
+    def get_curve_finance_pools_data(self):
+        """Curve Finance APIから全プールデータを取得（24時間おき用）"""
+        try:
+            url = "https://api.curve.finance/api/getPools/all/ethereum"
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('success') and 'data' in data:
+                pools = data['data'].get('poolData', [])
+                self.logger.info(f"✅ Curve Finance API取得成功: {len(pools)}件のプールデータ")
+                return pools
+            else:
+                self.logger.error("❌ Curve Finance APIレスポンスが無効です")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Curve Finance API取得エラー: {e}")
+            return None
+
     def find_factory_id_for_pool(self, pool_name, token_symbols, api_data, used_factory_ids=None):
         """トークンベースのマッチングでAPIデータのIDを特定"""
         if not api_data:
