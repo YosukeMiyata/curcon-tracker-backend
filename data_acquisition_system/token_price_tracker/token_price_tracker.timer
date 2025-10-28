@@ -1,0 +1,13 @@
+[Unit]
+Description=Token Price Tracker Timer - 1時間おきに実行
+Requires=token_price_tracker.service
+
+[Timer]
+# 日本時間17時から開始（UTC 8時）
+OnCalendar=*-*-* 08:00:00
+# 1時間おきに実行
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
