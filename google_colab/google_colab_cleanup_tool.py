@@ -134,6 +134,7 @@ class DynamoDBCleanupTool:
             'CvxCrvStakeMetrics',
             'ConvexPoolMetrics',
             'PriceHistory',
+            'TokenPriceHistory',
             'PoolLatest',
             'PoolMeta',
             'VaultMeta'
@@ -159,7 +160,7 @@ class DynamoDBCleanupTool:
                     count += response['Count']
 
                 # 最新データ取得
-                if table_name == 'PriceHistory':
+                if table_name in ['PriceHistory', 'TokenPriceHistory']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -318,6 +319,12 @@ class DynamoDBCleanupTool:
                 'sort_key': 'timestamp'
             },
             {
+                'name': 'TokenPriceHistory',
+                'partition_key': 'symbol',
+                'partition_value': None,
+                'sort_key': 'timestamp'
+            },
+            {
                 'name': 'PoolLatest',
                 'partition_key': 'pool_id',
                 'partition_value': None,
@@ -374,7 +381,7 @@ class DynamoDBCleanupTool:
                     else:
                         print(f"   データなし")
 
-                elif table_name == 'PriceHistory':
+                elif table_name in ['PriceHistory', 'TokenPriceHistory']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(
                         ProjectionExpression='#ts',
@@ -594,6 +601,12 @@ class DynamoDBCleanupTool:
                 'sort_key': 'timestamp'
             },
             {
+                'name': 'TokenPriceHistory',
+                'partition_key': 'symbol',
+                'partition_value': None,
+                'sort_key': 'timestamp'
+            },
+            {
                 'name': 'PoolLatest',
                 'partition_key': 'pool_id',
                 'partition_value': None,
@@ -670,7 +683,7 @@ class DynamoDBCleanupTool:
                             print(f"   ✅ {table_name}: {deleted_count:,}件削除完了")
                         total_deleted += deleted_count
 
-                elif table_name == 'PriceHistory':
+                elif table_name in ['PriceHistory', 'TokenPriceHistory']:
                     # 最新のタイムスタンプを取得
                     response = table.scan(
                         ProjectionExpression='#ts',
@@ -711,10 +724,16 @@ class DynamoDBCleanupTool:
 
                             with table.batch_writer() as batch_writer:
                                 for item in batch:
-                                    key = {
-                                        'asset': item['asset'],
-                                        'timestamp': item['timestamp']
-                                    }
+                                    if table_name == 'PriceHistory':
+                                        key = {
+                                            'asset': item['asset'],
+                                            'timestamp': item['timestamp']
+                                        }
+                                    else:  # TokenPriceHistory
+                                        key = {
+                                            'symbol': item['symbol'],
+                                            'timestamp': item['timestamp']
+                                        }
                                     batch_writer.delete_item(Key=key)
                                     deleted_count += 1
 
@@ -977,6 +996,7 @@ class DynamoDBCleanupTool:
             'CvxCrvStakeMetrics',
             'ConvexPoolMetrics',
             'PriceHistory',
+            'TokenPriceHistory',
             'PoolLatest'
         ]
 
@@ -1029,6 +1049,11 @@ class DynamoDBCleanupTool:
                                 elif table_name == 'PriceHistory':
                                     key = {
                                         'asset': item['asset'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'TokenPriceHistory':
+                                    key = {
+                                        'symbol': item['symbol'],
                                         'timestamp': item['timestamp']
                                     }
                                 elif table_name == 'PoolLatest':
@@ -1606,6 +1631,7 @@ class DynamoDBCleanupTool:
             'CvxCrvStakeMetrics', 
             'ConvexPoolMetrics',
             'PriceHistory',
+            'TokenPriceHistory',
             'PoolLatest',
             'PoolMeta',
             'VaultMeta'
@@ -1649,7 +1675,7 @@ class DynamoDBCleanupTool:
                     else:
                         latest_info = "データなし"
 
-                elif table_name in ['ConvexPoolMetrics', 'PriceHistory']:
+                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -1814,6 +1840,11 @@ class DynamoDBCleanupTool:
                                     'asset': item['asset'],
                                     'timestamp': item['timestamp']
                                 }
+                            elif table_name == 'TokenPriceHistory':
+                                key = {
+                                    'symbol': item['symbol'],
+                                    'timestamp': item['timestamp']
+                                }
                             elif table_name == 'PoolLatest':
                                 key = {
                                     'pool_id': item['pool_id']
@@ -1966,7 +1997,7 @@ class DynamoDBCleanupTool:
         print("📊 クリーンアップ前後のデータ件数比較チャート作成中...")
 
         # クリーンアップ前のデータ件数
-        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'PoolLatest', 'PoolMeta', 'VaultMeta']
+        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'PoolLatest', 'PoolMeta', 'VaultMeta']
         before_counts = []
         after_counts = []
 

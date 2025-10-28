@@ -92,6 +92,13 @@ class DynamoDBComprehensiveViewer:
                     'key_attr': 'vault_id',
                     'key_value': None,  # 複数のボルトがあるため
                     'sort_key': None  # メタデータのみ
+                },
+                'TokenPriceHistory': {
+                    'name': 'トークン価格履歴データ',
+                    'description': 'トークン価格の詳細履歴情報',
+                    'key_attr': 'symbol',
+                    'key_value': None,  # 複数のトークンがあるため
+                    'sort_key': 'timestamp'
                 }
             }
             self.connection_status = True
@@ -755,6 +762,85 @@ class DynamoDBComprehensiveViewer:
             print(f"❌ VaultMetaデータ取得エラー: {e}")
             return pd.DataFrame()
 
+    def get_token_price_history_data(self, limit=1000, days=None, symbol=None):
+        """TokenPriceHistoryテーブルの価格履歴データを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('TokenPriceHistory')
+
+            # フィルター条件を構築
+            filter_conditions = []
+
+            if symbol:
+                # symbolカラムでフィルタリング
+                filter_conditions.append(Attr('symbol').eq(symbol))
+
+            scan_params = {'Limit': limit}
+            if filter_conditions:
+                scan_params['FilterExpression'] = filter_conditions[0]
+                for condition in filter_conditions[1:]:
+                    scan_params['FilterExpression'] = scan_params['FilterExpression'] & condition
+
+            print(f"🔍 TokenPriceHistoryテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+
+            if response['Items']:
+                print(f"   📊 TokenPriceHistoryデータ取得: {len(response['Items'])}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in response['Items']]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['price', 'price_usd', 'price_jpy', 'market_cap', 'volume_24h', 'market_cap_numeric', 'price_numeric', 'rate']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+
+                # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
+                try:
+                    # まず文字列として処理してから日時変換
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    # タイムゾーン情報を完全に除去（UTC+09:00などの形式に対応）
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                except Exception as e:
+                    try:
+                        # フォールバック: 文字列から直接変換
+                        df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    except Exception as e2:
+                        print(f"⚠️ 日時変換でエラー: {e2}")
+                        df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
+                # 日付フィルタリング（データ取得後）
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        # タイムゾーン情報を除去したdatetimeで比較
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 TokenPriceHistoryデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 TokenPriceHistoryデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 TokenPriceHistoryデータ取得完了: {len(df)}件")
+
+                return df
+            else:
+                print("❌ TokenPriceHistoryデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ TokenPriceHistoryデータ取得エラー: {e}")
+            return pd.DataFrame()
+
     def display_data_preview(self, df, title, max_rows=5):
         """データのプレビューを表示（CSV出力と同じ項目順序）"""
         if df.empty:
@@ -780,6 +866,9 @@ class DynamoDBComprehensiveViewer:
         elif 'asset' in df.columns or 'rate' in df.columns:
             # PriceHistoryデータ
             df = self.organize_price_history_columns(df)
+        elif 'symbol' in df.columns and title == 'TokenPriceHistoryデータ':
+            # TokenPriceHistoryデータ
+            df = self.organize_token_price_history_columns(df)
         elif 'pool_id' in df.columns and title == 'PoolMetaデータ':
             # PoolMetaデータ
             df = self.organize_pool_meta_columns(df)
@@ -1337,6 +1426,29 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_token_price_history_columns(self, df):
+        """TokenPriceHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（TokenPriceHistory用）
+        desired_columns = [
+            'timezone', 'timestamp', 'symbol', 'price', 'price_usd', 
+            'price_jpy', 'market_cap', 'volume_24h', 'rate', 'source', 
+            'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
     def export_to_csv(self, days=7):
         """データをCSVファイルにエクスポート（Google Colab自動ダウンロード対応）"""
         print(f"📁 過去{days}日間のデータをCSVエクスポート中...")
@@ -1347,6 +1459,7 @@ class DynamoDBComprehensiveViewer:
         pools_df = self.get_pools_data(limit=5000, days=days)
         pool_latest_df = self.get_pool_latest_data(limit=1000)
         price_history_df = self.get_price_history_data(limit=5000, days=days)
+        token_price_history_df = self.get_token_price_history_data(limit=5000, days=days)
         pool_meta_df = self.get_pool_meta_data(limit=5000)
         vault_meta_df = self.get_vault_meta_data(limit=5000)
 
@@ -1422,6 +1535,18 @@ class DynamoDBComprehensiveViewer:
             if colab_available:
                 files.download(filename)
 
+        if not token_price_history_df.empty:
+            filename = f'token_price_history_data_{timestamp}.csv'
+            # TokenPriceHistoryデータのカラム順序を整理
+            token_price_history_df_organized = self.organize_token_price_history_columns(token_price_history_df)
+            token_price_history_df_organized.to_csv(filename, index=False)
+            print(f"✅ TokenPriceHistoryデータ: {filename} ({len(token_price_history_df)}件)")
+            print(f"📋 TokenPriceHistoryカラム順序: {list(token_price_history_df_organized.columns)}")
+            downloaded_files.append(filename)
+
+            if colab_available:
+                files.download(filename)
+
         if not pool_meta_df.empty:
             filename = f'pool_meta_data_{timestamp}.csv'
             # PoolMetaデータのカラム順序を整理
@@ -1484,6 +1609,9 @@ class DynamoDBComprehensiveViewer:
         elif table_type.lower() in ['pricehistory', 'price_history']:
             df = self.get_price_history_data(limit=5000, days=days)
             filename = f'price_history_data_{timestamp}.csv'
+        elif table_type.lower() in ['tokenpricehistory', 'token_price_history']:
+            df = self.get_token_price_history_data(limit=5000, days=days)
+            filename = f'token_price_history_data_{timestamp}.csv'
         elif table_type.lower() in ['poolmeta', 'pool_meta']:
             df = self.get_pool_meta_data(limit=5000)
             filename = f'pool_meta_data_{timestamp}.csv'
@@ -1515,6 +1643,10 @@ class DynamoDBComprehensiveViewer:
             elif table_type.lower() in ['pricehistory', 'price_history']:
                 df = self.organize_price_history_columns(df)
                 print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
+            # TokenPriceHistoryデータの場合はカラム順序を整理
+            elif table_type.lower() in ['tokenpricehistory', 'token_price_history']:
+                df = self.organize_token_price_history_columns(df)
+                print(f"📋 TokenPriceHistoryカラム順序: {list(df.columns)}")
             # PoolMetaデータの場合はカラム順序を整理
             elif table_type.lower() in ['poolmeta', 'pool_meta']:
                 df = self.organize_pool_meta_columns(df)
@@ -1549,6 +1681,7 @@ class DynamoDBComprehensiveViewer:
         pools_df = self.get_pools_data(limit=10)
         pool_latest_df = self.get_pool_latest_data(limit=10)
         price_history_df = self.get_price_history_data(limit=10)
+        token_price_history_df = self.get_token_price_history_data(limit=10)
         pool_meta_df = self.get_pool_meta_data(limit=10)
         vault_meta_df = self.get_vault_meta_data(limit=10)
 
@@ -1557,6 +1690,7 @@ class DynamoDBComprehensiveViewer:
         self.display_data_preview(pools_df, "プールデータ")
         self.display_data_preview(pool_latest_df, "PoolLatestデータ")
         self.display_data_preview(price_history_df, "PriceHistoryデータ")
+        self.display_data_preview(token_price_history_df, "TokenPriceHistoryデータ")
         self.display_data_preview(pool_meta_df, "PoolMetaデータ")
         self.display_data_preview(vault_meta_df, "VaultMetaデータ")
 
@@ -1614,6 +1748,11 @@ def export_price_history_data(days=7):
     viewer = DynamoDBComprehensiveViewer()
     viewer.export_single_table('price_history', days=days)
 
+def export_token_price_history_data(days=7):
+    """TokenPriceHistoryデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('token_price_history', days=days)
+
 def show_trends():
     """トレンドチャート表示"""
     viewer = DynamoDBComprehensiveViewer()
@@ -1638,6 +1777,16 @@ def show_price_history_data(limit=20, symbol=None):
         df = viewer.organize_price_history_columns(df)
         print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "PriceHistoryデータ", max_rows=limit)
+
+def show_token_price_history_data(limit=20, symbol=None):
+    """TokenPriceHistoryデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_token_price_history_data(limit=limit, symbol=symbol)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_token_price_history_columns(df)
+        print(f"📋 TokenPriceHistoryカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "TokenPriceHistoryデータ", max_rows=limit)
 
 def show_pool_meta_data(limit=100):
     """PoolMetaデータを表示"""
@@ -1951,6 +2100,7 @@ print("   - export_cvxcrv_data(7)               # cvxCRVデータのみエクス
 print("   - export_pools_data(7)                # プールデータのみエクスポート")
 print("   - export_pool_latest_data()           # PoolLatestデータのみエクスポート")
 print("   - export_price_history_data(7)        # PriceHistoryデータのみエクスポート")
+print("   - export_token_price_history_data(7)  # TokenPriceHistoryデータのみエクスポート")
 print("   - export_pool_meta_data()             # PoolMetaデータのみエクスポート")
 print("   - export_vault_meta_data()            # VaultMetaデータのみエクスポート")
 print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
@@ -1958,6 +2108,7 @@ print("   - export_all_vault_meta_data()        # VaultMeta全データエクス
 print("   - export_all_convex_pool_metrics_data() # ConvexPoolMetrics全データエクスポート（制限なし）")
 print("   - show_pool_latest_data(20)           # PoolLatestデータを表示")
 print("   - show_price_history_data(20, 'CVX')  # PriceHistoryデータを表示（シンボル指定可能）")
+print("   - show_token_price_history_data(20, 'CVX') # TokenPriceHistoryデータを表示（シンボル指定可能）")
 print("   - show_pool_meta_data(100)            # PoolMetaデータを表示")
 print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
 print("   - show_convex_pool_metrics_data(100)  # ConvexPoolMetricsデータを表示")
@@ -1980,9 +2131,11 @@ print("\n   # ConvexPoolMetricsデータを確認")
 print("   show_convex_pool_metrics_data(100)")
 print("\n   # CVXの価格履歴を確認")
 print("   show_price_history_data(100, 'CVX')")
+print("   show_token_price_history_data(100, 'CVX')")
 print("\n   # 特定のテーブルデータのみをダウンロード")
 print("   export_pool_latest_data()")
 print("   export_price_history_data(30)")
+print("   export_token_price_history_data(30)")
 print("   export_pool_meta_data()")
 print("   export_vault_meta_data()")
 print("\n   # 全データをエクスポート（制限なし）")
