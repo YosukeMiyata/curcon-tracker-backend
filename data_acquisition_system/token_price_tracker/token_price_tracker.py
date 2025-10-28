@@ -283,15 +283,24 @@ class TokenPriceTracker:
                     'timezone': 'JST',
                     'created_at': jst_created_at,
                     'data_source': 'curve_finance_api',
-                    'pool_count': len(info['pools']),
+                    'pool_count': int(len(info['pools'])),  # 整数に変換
                     'pools': ', '.join(info['pools']),
                     'factory_ids': ', '.join(info['factory_ids']) if info['factory_ids'] else '',
-                    'price': f"${price:.6f}",
+                    'price': f"${price:.6f}",  # $マーク付きの価格
                     'price_numeric': Decimal(str(price))
                 }
                 
-                # NoneやNaN値を除去
-                item = {k: v for k, v in item.items() if v is not None and v != ''}
+                # priceフィールドが空でないことを確認
+                if not item['price'] or item['price'] == '':
+                    self.logger.warning(f"⚠️ {token}のpriceフィールドが空です: {item['price']}")
+                    item['price'] = f"${price:.6f}"  # 再設定
+                
+                # NoneやNaN値を除去（priceフィールドは空文字列でも保持）
+                item = {k: v for k, v in item.items() if v is not None and (k == 'price' or v != '')}
+                
+                # pool_countを確実に整数として保存
+                if 'pool_count' in item:
+                    item['pool_count'] = int(item['pool_count'])
                 
                 self.token_price_table.put_item(Item=item)
                 saved_count += 1

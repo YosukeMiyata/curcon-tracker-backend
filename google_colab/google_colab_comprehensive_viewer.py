@@ -795,11 +795,16 @@ class DynamoDBComprehensiveViewer:
                 print(f"   📋 カラム一覧: {list(df.columns)}")
 
                 # 数値変換（Decimal型対応）
-                numeric_columns = ['price', 'price_usd', 'price_jpy', 'market_cap', 'volume_24h', 'market_cap_numeric', 'price_numeric', 'rate']
+                numeric_columns = ['price_usd', 'price_jpy', 'market_cap', 'volume_24h', 'market_cap_numeric', 'price_numeric', 'rate', 'pool_count']
                 for col in numeric_columns:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                         print(f"   ✅ {col}を数値変換")
+                
+                # pool_countを整数に変換
+                if 'pool_count' in df.columns:
+                    df['pool_count'] = df['pool_count'].astype('Int64')
+                    print(f"   ✅ pool_countを整数に変換")
 
                 # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
                 try:
@@ -808,15 +813,23 @@ class DynamoDBComprehensiveViewer:
                     # タイムゾーン情報を完全に除去（UTC+09:00などの形式に対応）
                     if df['datetime'].dt.tz is not None:
                         df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    print(f"   ✅ datetimeカラム作成完了")
                 except Exception as e:
+                    print(f"⚠️ 日時変換でエラー: {e}")
                     try:
                         # フォールバック: 文字列から直接変換
                         df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
                         if df['datetime'].dt.tz is not None:
                             df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        print(f"   ✅ datetimeカラム作成完了（フォールバック）")
                     except Exception as e2:
                         print(f"⚠️ 日時変換でエラー: {e2}")
                         df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                        print(f"   ✅ datetimeカラム作成完了（最終フォールバック）")
+                
+                # TokenPriceHistoryデータのカラム順序を整理（datetimeカラム作成後）
+                print(f"🔧 カラム順序整理実行前: {list(df.columns)}")
+                df = self.organize_token_price_history_columns(df)
 
                 # 日付フィルタリング（データ取得後）
                 if days:
@@ -825,6 +838,8 @@ class DynamoDBComprehensiveViewer:
                         # タイムゾーン情報を除去したdatetimeで比較
                         cutoff_date_naive = cutoff_date.replace(tzinfo=None)
                         df = df[df['datetime'] >= cutoff_date_naive]
+                        # 日付フィルタリング後にカラム順序を再度整理
+                        df = self.organize_token_price_history_columns(df)
                         print(f"📊 TokenPriceHistoryデータ取得完了: {len(df)}件 (過去{days}日分)")
                     except Exception as e:
                         print(f"⚠️ 日付フィルタリングでエラー: {e}")
@@ -1358,6 +1373,32 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_token_price_history_columns(self, df):
+        """TokenPriceHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        print(f"🔧 カラム順序整理前: {list(df.columns)}")
+        
+        # 指定された順序のカラムリスト（TokenPriceHistory用）
+        desired_columns = [
+            'timezone', 'timestamp', 'token', 'price', 'price_numeric', 
+            'pool_count', 'pools', 'factory_ids', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        print(f"🔧 カラム順序整理後: {final_columns}")
+        
+        return df[final_columns]
+
     def organize_price_history_columns(self, df):
         """PriceHistoryデータのカラム順序を整理"""
         if df.empty:
@@ -1413,29 +1454,6 @@ class DynamoDBComprehensiveViewer:
             'timezone', 'timestamp', 'vault_id', 'name', 'symbol', 'tvl', 
             'apr', 'apy', 'fee', 'volume_24h', 'total_supply', 'underlying_asset', 
             'strategy', 'description', 'data_source', 'datetime', 'created_at'
-        ]
-        
-        # 存在するカラムのみを選択
-        existing_columns = [col for col in desired_columns if col in df.columns]
-        
-        # 存在しないカラムを最後に追加
-        missing_columns = [col for col in df.columns if col not in desired_columns]
-        
-        # 最終的なカラム順序
-        final_columns = existing_columns + missing_columns
-        
-        return df[final_columns]
-
-    def organize_token_price_history_columns(self, df):
-        """TokenPriceHistoryデータのカラム順序を整理"""
-        if df.empty:
-            return df
-        
-        # 指定された順序のカラムリスト（TokenPriceHistory用）
-        desired_columns = [
-            'timezone', 'timestamp', 'symbol', 'price', 'price_usd', 
-            'price_jpy', 'market_cap', 'volume_24h', 'rate', 'source', 
-            'datetime', 'created_at'
         ]
         
         # 存在するカラムのみを選択
@@ -1643,9 +1661,8 @@ class DynamoDBComprehensiveViewer:
             elif table_type.lower() in ['pricehistory', 'price_history']:
                 df = self.organize_price_history_columns(df)
                 print(f"📋 PriceHistoryカラム順序: {list(df.columns)}")
-            # TokenPriceHistoryデータの場合はカラム順序を整理
+            # TokenPriceHistoryデータの場合は既にget_token_price_history_data内でカラム順序を整理済み
             elif table_type.lower() in ['tokenpricehistory', 'token_price_history']:
-                df = self.organize_token_price_history_columns(df)
                 print(f"📋 TokenPriceHistoryカラム順序: {list(df.columns)}")
             # PoolMetaデータの場合はカラム順序を整理
             elif table_type.lower() in ['poolmeta', 'pool_meta']:

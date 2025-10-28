@@ -6,6 +6,7 @@ Requires=token_price_tracker.service
 # 日本時間17時から開始（UTC 8時）
 OnCalendar=*-*-* 08:00:00
 # 1時間おきに実行
+OnUnitActiveSec=1h
 Persistent=true
 AccuracySec=1min
 
