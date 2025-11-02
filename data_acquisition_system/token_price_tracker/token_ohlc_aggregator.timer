@@ -1,0 +1,13 @@
+[Unit]
+Description=Token OHLC Aggregator Timer - 毎日午前0時にOHLCデータを集約
+Requires=token_ohlc_aggregator.service
+
+[Timer]
+# 日本時間0時（UTC 15時）に実行
+OnCalendar=*-*-* 15:00:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+

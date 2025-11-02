@@ -99,6 +99,13 @@ class DynamoDBComprehensiveViewer:
                     'key_attr': 'symbol',
                     'key_value': None,  # 複数のトークンがあるため
                     'sort_key': 'timestamp'
+                },
+                'TokenOHLCDaily': {
+                    'name': 'トークンOHLC日次データ',
+                    'description': 'トークンの日次OHLC（Open/High/Low/Close）情報',
+                    'key_attr': 'token',
+                    'key_value': None,  # 複数のトークンがあるため
+                    'sort_key': 'timestamp'
                 }
             }
             self.connection_status = True
@@ -856,6 +863,100 @@ class DynamoDBComprehensiveViewer:
             print(f"❌ TokenPriceHistoryデータ取得エラー: {e}")
             return pd.DataFrame()
 
+    def get_token_ohlc_daily_data(self, limit=1000, days=None, token=None):
+        """TokenOHLCDailyテーブルのOHLC日次データを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('TokenOHLCDaily')
+
+            # フィルター条件を構築
+            filter_conditions = []
+
+            if token:
+                # tokenカラムでフィルタリング
+                filter_conditions.append(Attr('token').eq(token))
+
+            scan_params = {'Limit': limit}
+            if filter_conditions:
+                scan_params['FilterExpression'] = filter_conditions[0]
+                for condition in filter_conditions[1:]:
+                    scan_params['FilterExpression'] = scan_params['FilterExpression'] & condition
+
+            print(f"🔍 TokenOHLCDailyテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+
+            if response['Items']:
+                print(f"   📊 TokenOHLCDailyデータ取得: {len(response['Items'])}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in response['Items']]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['open', 'high', 'low', 'close', 'sample_count']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+                
+                # sample_countを整数に変換
+                if 'sample_count' in df.columns:
+                    df['sample_count'] = df['sample_count'].astype('Int64')
+                    print(f"   ✅ sample_countを整数に変換")
+
+                # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
+                try:
+                    # まず文字列として処理してから日時変換
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    # タイムゾーン情報を完全に除去（UTC+09:00などの形式に対応）
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    print(f"   ✅ datetimeカラム作成完了")
+                except Exception as e:
+                    print(f"⚠️ 日時変換でエラー: {e}")
+                    try:
+                        # フォールバック: 文字列から直接変換
+                        df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        print(f"   ✅ datetimeカラム作成完了（フォールバック）")
+                    except Exception as e2:
+                        print(f"⚠️ 日時変換でエラー: {e2}")
+                        df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                        print(f"   ✅ datetimeカラム作成完了（最終フォールバック）")
+                
+                # TokenOHLCDailyデータのカラム順序を整理（datetimeカラム作成後）
+                print(f"🔧 カラム順序整理実行前: {list(df.columns)}")
+                df = self.organize_token_ohlc_daily_columns(df)
+
+                # 日付フィルタリング（データ取得後）
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        # タイムゾーン情報を除去したdatetimeで比較
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        # 日付フィルタリング後にカラム順序を再度整理
+                        df = self.organize_token_ohlc_daily_columns(df)
+                        print(f"📊 TokenOHLCDailyデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 TokenOHLCDailyデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 TokenOHLCDailyデータ取得完了: {len(df)}件")
+
+                return df
+            else:
+                print("❌ TokenOHLCDailyデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ TokenOHLCDailyデータ取得エラー: {e}")
+            return pd.DataFrame()
+
     def display_data_preview(self, df, title, max_rows=5):
         """データのプレビューを表示（CSV出力と同じ項目順序）"""
         if df.empty:
@@ -884,6 +985,9 @@ class DynamoDBComprehensiveViewer:
         elif 'symbol' in df.columns and title == 'TokenPriceHistoryデータ':
             # TokenPriceHistoryデータ
             df = self.organize_token_price_history_columns(df)
+        elif 'token' in df.columns and 'open' in df.columns and title == 'TokenOHLCDailyデータ':
+            # TokenOHLCDailyデータ
+            df = self.organize_token_ohlc_daily_columns(df)
         elif 'pool_id' in df.columns and title == 'PoolMetaデータ':
             # PoolMetaデータ
             df = self.organize_pool_meta_columns(df)
@@ -1399,6 +1503,32 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_token_ohlc_daily_columns(self, df):
+        """TokenOHLCDailyデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        print(f"🔧 カラム順序整理前: {list(df.columns)}")
+        
+        # 指定された順序のカラムリスト（TokenOHLCDaily用）
+        desired_columns = [
+            'timezone', 'timestamp', 'token', 'open', 'high', 'low', 'close',
+            'sample_count', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        print(f"🔧 カラム順序整理後: {final_columns}")
+        
+        return df[final_columns]
+
     def organize_price_history_columns(self, df):
         """PriceHistoryデータのカラム順序を整理"""
         if df.empty:
@@ -1478,6 +1608,7 @@ class DynamoDBComprehensiveViewer:
         pool_latest_df = self.get_pool_latest_data(limit=1000)
         price_history_df = self.get_price_history_data(limit=5000, days=days)
         token_price_history_df = self.get_token_price_history_data(limit=5000, days=days)
+        token_ohlc_daily_df = self.get_token_ohlc_daily_data(limit=5000, days=days)
         pool_meta_df = self.get_pool_meta_data(limit=5000)
         vault_meta_df = self.get_vault_meta_data(limit=5000)
 
@@ -1565,6 +1696,18 @@ class DynamoDBComprehensiveViewer:
             if colab_available:
                 files.download(filename)
 
+        if not token_ohlc_daily_df.empty:
+            filename = f'token_ohlc_daily_data_{timestamp}.csv'
+            # TokenOHLCDailyデータのカラム順序を整理
+            token_ohlc_daily_df_organized = self.organize_token_ohlc_daily_columns(token_ohlc_daily_df)
+            token_ohlc_daily_df_organized.to_csv(filename, index=False)
+            print(f"✅ TokenOHLCDailyデータ: {filename} ({len(token_ohlc_daily_df)}件)")
+            print(f"📋 TokenOHLCDailyカラム順序: {list(token_ohlc_daily_df_organized.columns)}")
+            downloaded_files.append(filename)
+
+            if colab_available:
+                files.download(filename)
+
         if not pool_meta_df.empty:
             filename = f'pool_meta_data_{timestamp}.csv'
             # PoolMetaデータのカラム順序を整理
@@ -1630,6 +1773,9 @@ class DynamoDBComprehensiveViewer:
         elif table_type.lower() in ['tokenpricehistory', 'token_price_history']:
             df = self.get_token_price_history_data(limit=5000, days=days)
             filename = f'token_price_history_data_{timestamp}.csv'
+        elif table_type.lower() in ['tokenohlcdaily', 'token_ohlc_daily']:
+            df = self.get_token_ohlc_daily_data(limit=5000, days=days)
+            filename = f'token_ohlc_daily_data_{timestamp}.csv'
         elif table_type.lower() in ['poolmeta', 'pool_meta']:
             df = self.get_pool_meta_data(limit=5000)
             filename = f'pool_meta_data_{timestamp}.csv'
@@ -1664,6 +1810,9 @@ class DynamoDBComprehensiveViewer:
             # TokenPriceHistoryデータの場合は既にget_token_price_history_data内でカラム順序を整理済み
             elif table_type.lower() in ['tokenpricehistory', 'token_price_history']:
                 print(f"📋 TokenPriceHistoryカラム順序: {list(df.columns)}")
+            # TokenOHLCDailyデータの場合は既にget_token_ohlc_daily_data内でカラム順序を整理済み
+            elif table_type.lower() in ['tokenohlcdaily', 'token_ohlc_daily']:
+                print(f"📋 TokenOHLCDailyカラム順序: {list(df.columns)}")
             # PoolMetaデータの場合はカラム順序を整理
             elif table_type.lower() in ['poolmeta', 'pool_meta']:
                 df = self.organize_pool_meta_columns(df)
@@ -1699,6 +1848,7 @@ class DynamoDBComprehensiveViewer:
         pool_latest_df = self.get_pool_latest_data(limit=10)
         price_history_df = self.get_price_history_data(limit=10)
         token_price_history_df = self.get_token_price_history_data(limit=10)
+        token_ohlc_daily_df = self.get_token_ohlc_daily_data(limit=10)
         pool_meta_df = self.get_pool_meta_data(limit=10)
         vault_meta_df = self.get_vault_meta_data(limit=10)
 
@@ -1708,6 +1858,7 @@ class DynamoDBComprehensiveViewer:
         self.display_data_preview(pool_latest_df, "PoolLatestデータ")
         self.display_data_preview(price_history_df, "PriceHistoryデータ")
         self.display_data_preview(token_price_history_df, "TokenPriceHistoryデータ")
+        self.display_data_preview(token_ohlc_daily_df, "TokenOHLCDailyデータ")
         self.display_data_preview(pool_meta_df, "PoolMetaデータ")
         self.display_data_preview(vault_meta_df, "VaultMetaデータ")
 
@@ -1770,6 +1921,11 @@ def export_token_price_history_data(days=7):
     viewer = DynamoDBComprehensiveViewer()
     viewer.export_single_table('token_price_history', days=days)
 
+def export_token_ohlc_daily_data(days=7):
+    """TokenOHLCDailyデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('token_ohlc_daily', days=days)
+
 def show_trends():
     """トレンドチャート表示"""
     viewer = DynamoDBComprehensiveViewer()
@@ -1804,6 +1960,16 @@ def show_token_price_history_data(limit=20, symbol=None):
         df = viewer.organize_token_price_history_columns(df)
         print(f"📋 TokenPriceHistoryカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "TokenPriceHistoryデータ", max_rows=limit)
+
+def show_token_ohlc_daily_data(limit=20, token=None):
+    """TokenOHLCDailyデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_token_ohlc_daily_data(limit=limit, token=token)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_token_ohlc_daily_columns(df)
+        print(f"📋 TokenOHLCDailyカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "TokenOHLCDailyデータ", max_rows=limit)
 
 def show_pool_meta_data(limit=100):
     """PoolMetaデータを表示"""
@@ -2118,6 +2284,7 @@ print("   - export_pools_data(7)                # プールデータのみエク
 print("   - export_pool_latest_data()           # PoolLatestデータのみエクスポート")
 print("   - export_price_history_data(7)        # PriceHistoryデータのみエクスポート")
 print("   - export_token_price_history_data(7)  # TokenPriceHistoryデータのみエクスポート")
+print("   - export_token_ohlc_daily_data(7)    # TokenOHLCDailyデータのみエクスポート")
 print("   - export_pool_meta_data()             # PoolMetaデータのみエクスポート")
 print("   - export_vault_meta_data()            # VaultMetaデータのみエクスポート")
 print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
@@ -2126,6 +2293,7 @@ print("   - export_all_convex_pool_metrics_data() # ConvexPoolMetrics全デー�
 print("   - show_pool_latest_data(20)           # PoolLatestデータを表示")
 print("   - show_price_history_data(20, 'CVX')  # PriceHistoryデータを表示（シンボル指定可能）")
 print("   - show_token_price_history_data(20, 'CVX') # TokenPriceHistoryデータを表示（シンボル指定可能）")
+print("   - show_token_ohlc_daily_data(20, 'CVX')    # TokenOHLCDailyデータを表示（トークン指定可能）")
 print("   - show_pool_meta_data(100)            # PoolMetaデータを表示")
 print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
 print("   - show_convex_pool_metrics_data(100)  # ConvexPoolMetricsデータを表示")
@@ -2153,6 +2321,7 @@ print("\n   # 特定のテーブルデータのみをダウンロード")
 print("   export_pool_latest_data()")
 print("   export_price_history_data(30)")
 print("   export_token_price_history_data(30)")
+print("   export_token_ohlc_daily_data(30)")
 print("   export_pool_meta_data()")
 print("   export_vault_meta_data()")
 print("\n   # 全データをエクスポート（制限なし）")
