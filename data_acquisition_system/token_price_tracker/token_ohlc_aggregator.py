@@ -11,6 +11,17 @@ from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from botocore.exceptions import ClientError
 from decimal import Decimal
+import sys
+from pathlib import Path
+import traceback
+
+# Slack通知のインポート
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+try:
+    from utils.slack_notifier import SlackNotifier
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
 
 class TokenOHLCAggregator:
     def __init__(self):
@@ -27,6 +38,18 @@ class TokenOHLCAggregator:
         
         # ログ設定
         self.setup_logging()
+        
+        # Slack通知の初期化
+        if SLACK_AVAILABLE:
+            try:
+                self.slack_notifier = SlackNotifier()
+                self.logger.info("✅ Slack通知機能が有効です")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Slack通知初期化エラー: {e}")
+                self.slack_notifier = None
+        else:
+            self.slack_notifier = None
+            self.logger.warning("⚠️ Slack通知モジュールが利用できません")
         
         # テーブル接続
         self.setup_tables()
@@ -56,7 +79,14 @@ class TokenOHLCAggregator:
             self.logger.info("✅ TokenOHLCDailyテーブルに接続しました")
                     
         except ClientError as e:
-            self.logger.error(f"❌ テーブル接続エラー: {e}")
+            error_msg = f"❌ テーブル接続エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token OHLC Aggregator",
+                    error=e
+                )
             raise e
     
     def get_yesterday_price_data(self):
@@ -98,7 +128,14 @@ class TokenOHLCAggregator:
             return yesterday_items
             
         except Exception as e:
-            self.logger.error(f"❌ データ取得エラー: {e}")
+            error_msg = f"❌ データ取得エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token OHLC Aggregator",
+                    error=e
+                )
             return []
     
     def aggregate_ohlc_data(self, items):
@@ -190,7 +227,14 @@ class TokenOHLCAggregator:
             return saved_count > 0
             
         except Exception as e:
-            self.logger.error(f"❌ OHLCデータ保存エラー: {e}")
+            error_msg = f"❌ OHLCデータ保存エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token OHLC Aggregator",
+                    error=e
+                )
             return False
     
     def clear_price_history_table_except_midnight(self):
@@ -248,7 +292,14 @@ class TokenOHLCAggregator:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ テーブルクリアエラー: {e}")
+            error_msg = f"❌ テーブルクリアエラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token OHLC Aggregator",
+                    error=e
+                )
             return False
     
     def run_daily_aggregation(self):
@@ -277,12 +328,24 @@ class TokenOHLCAggregator:
             
             # 4. TokenOHLCDailyテーブルに保存
             if not self.save_ohlc_data(ohlc_data, yesterday):
-                self.logger.error("❌ OHLCデータ保存に失敗しました。処理を中止します。")
+                error_msg = "❌ OHLCデータ保存に失敗しました。処理を中止します。"
+                self.logger.error(error_msg)
+                if self.slack_notifier:
+                    self.slack_notifier.notify_error(
+                        message=error_msg,
+                        system_name="Token OHLC Aggregator"
+                    )
                 return False
             
             # 5. TokenPriceHistoryテーブルをクリア（深夜00:00のデータは保持）
             if not self.clear_price_history_table_except_midnight():
-                self.logger.error("❌ TokenPriceHistoryテーブルのクリアに失敗しました。")
+                error_msg = "❌ TokenPriceHistoryテーブルのクリアに失敗しました。"
+                self.logger.error(error_msg)
+                if self.slack_notifier:
+                    self.slack_notifier.notify_error(
+                        message=error_msg,
+                        system_name="Token OHLC Aggregator"
+                    )
                 return False
             
             self.logger.info("=" * 50)
@@ -290,8 +353,15 @@ class TokenOHLCAggregator:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ 日次OHLC集約エラー: {e}")
+            error_msg = f"❌ 日次OHLC集約エラー: {e}"
+            self.logger.error(error_msg)
             self.logger.error("❌ TokenPriceHistoryテーブルはクリアされません。")
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token OHLC Aggregator",
+                    error=e
+                )
             return False
 
 def main():
@@ -307,7 +377,20 @@ def main():
             exit(1)
             
     except Exception as e:
-        print(f"❌ エラー: {e}")
+        error_msg = f"❌ エラー: {e}"
+        print(error_msg)
+        # Slack通知（グローバルインスタンスを使用）
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            from utils.slack_notifier import SlackNotifier
+            notifier = SlackNotifier()
+            notifier.notify_error(
+                message=error_msg,
+                system_name="Token OHLC Aggregator",
+                error=e
+            )
+        except Exception:
+            pass  # Slack通知失敗は無視
         exit(1)
 
 if __name__ == "__main__":

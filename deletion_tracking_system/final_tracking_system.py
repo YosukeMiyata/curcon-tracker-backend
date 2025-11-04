@@ -13,6 +13,16 @@ from boto3.dynamodb.conditions import Key, Attr
 from functools import wraps
 import os
 import sys
+from pathlib import Path
+import traceback
+
+# Slack通知のインポート
+sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from utils.slack_notifier import SlackNotifier
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
 
 class FinalTrackingSystem:
     def __init__(self):
@@ -33,10 +43,34 @@ class FinalTrackingSystem:
             )
             self.logger = logging.getLogger(__name__)
             
+            # Slack通知の初期化
+            if SLACK_AVAILABLE:
+                try:
+                    self.slack_notifier = SlackNotifier()
+                    self.logger.info("✅ Slack通知機能が有効です")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Slack通知初期化エラー: {e}")
+                    self.slack_notifier = None
+            else:
+                self.slack_notifier = None
+                self.logger.warning("⚠️ Slack通知モジュールが利用できません")
+            
             print("✅ 最終追跡システム初期化完了")
         except Exception as e:
-            print(f"❌ 最終追跡システム初期化エラー: {e}")
+            error_msg = f"❌ 最終追跡システム初期化エラー: {e}"
+            print(error_msg)
             self.connection_status = False
+            # Slack通知（インスタンス作成前にエラーが発生した場合）
+            try:
+                if SLACK_AVAILABLE:
+                    notifier = SlackNotifier()
+                    notifier.notify_error(
+                        message=error_msg,
+                        system_name="Final Tracking System",
+                        error=e
+                    )
+            except Exception:
+                pass
 
     def log_deletion_operation(self, table_name, operation, function_name, caller_info, additional_data=None):
         """削除操作を専用テーブルに記録"""
@@ -74,8 +108,15 @@ class FinalTrackingSystem:
             return True
             
         except Exception as e:
-            print(f"❌ 削除操作記録エラー: {e}")
+            error_msg = f"❌ 削除操作記録エラー: {e}"
+            print(error_msg)
             self.logger.error(f"削除操作記録エラー: {e}")
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Final Tracking System",
+                    error=e
+                )
             return False
 
     def track_deletion(self, table_name, operation="delete"):
@@ -134,7 +175,14 @@ class FinalTrackingSystem:
             return response.get('Items', [])
             
         except Exception as e:
-            print(f"❌ テーブル別ログクエリエラー: {e}")
+            error_msg = f"❌ テーブル別ログクエリエラー: {e}"
+            print(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Final Tracking System",
+                    error=e
+                )
             return []
 
     def query_logs_by_operation(self, operation_type, limit=100):
@@ -153,7 +201,14 @@ class FinalTrackingSystem:
             return response.get('Items', [])
             
         except Exception as e:
-            print(f"❌ 操作別ログクエリエラー: {e}")
+            error_msg = f"❌ 操作別ログクエリエラー: {e}"
+            print(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Final Tracking System",
+                    error=e
+                )
             return []
 
     def analyze_comprehensive_logs(self, days=7):
@@ -239,7 +294,14 @@ class FinalTrackingSystem:
                 print(f"   {i}. {timestamp} - {table} - {operation} - {function}")
                 
         except Exception as e:
-            print(f"❌ 包括的ログ分析エラー: {e}")
+            error_msg = f"❌ 包括的ログ分析エラー: {e}"
+            print(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Final Tracking System",
+                    error=e
+                )
 
     def create_tracked_cleanup_tool(self):
         """追跡機能付きクリーンアップツールを作成"""

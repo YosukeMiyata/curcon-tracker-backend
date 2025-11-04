@@ -14,6 +14,17 @@ from botocore.exceptions import ClientError
 from decimal import Decimal
 import re
 import os
+import sys
+from pathlib import Path
+import traceback
+
+# Slack通知のインポート
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+try:
+    from utils.slack_notifier import SlackNotifier
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
 
 class TokenPriceTracker:
     def __init__(self):
@@ -29,6 +40,18 @@ class TokenPriceTracker:
         
         # ログ設定
         self.setup_logging()
+        
+        # Slack通知の初期化
+        if SLACK_AVAILABLE:
+            try:
+                self.slack_notifier = SlackNotifier()
+                self.logger.info("✅ Slack通知機能が有効です")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Slack通知初期化エラー: {e}")
+                self.slack_notifier = None
+        else:
+            self.slack_notifier = None
+            self.logger.warning("⚠️ Slack通知モジュールが利用できません")
         
         # テーブル接続
         self.setup_tables()
@@ -69,7 +92,14 @@ class TokenPriceTracker:
                     raise e
                     
         except ClientError as e:
-            self.logger.error(f"❌ テーブル接続エラー: {e}")
+            error_msg = f"❌ テーブル接続エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
             return False
         return True
     
@@ -107,7 +137,14 @@ class TokenPriceTracker:
             self.logger.info("✅ TokenPriceHistoryテーブルを作成しました")
             
         except Exception as e:
-            self.logger.error(f"❌ テーブル作成エラー: {e}")
+            error_msg = f"❌ テーブル作成エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
             raise e
     
     def fetch_curve_prices(self):
@@ -140,9 +177,23 @@ class TokenPriceTracker:
                 self.logger.warning("⚠️ APIレスポンスの構造が予期しない形式です")
                 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"❌ Curve API取得エラー: {e}")
+            error_msg = f"❌ Curve API取得エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
         except Exception as e:
-            self.logger.error(f"❌ 価格データ処理エラー: {e}")
+            error_msg = f"❌ 価格データ処理エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
     
     def get_all_pool_data(self):
         """ConvexPoolMetricsから全プールデータを取得"""
@@ -308,9 +359,11 @@ class TokenPriceTracker:
                 self.logger.info(f"✅ {token}価格保存: ${price:.6f} (プール数: {len(info['pools'])})")
                 
             except Exception as e:
-                self.logger.error(f"❌ {token}保存エラー: {e}")
+                error_msg = f"❌ {token}保存エラー: {e}"
+                self.logger.error(error_msg)
                 self.failed_tokens.append(token)
                 failed_count += 1
+                # 個別のトークン保存エラーはSlack通知しない（大量に発生する可能性があるため）
         
         self.logger.info(f"📊 保存完了: {saved_count}個成功, {failed_count}個失敗")
     
@@ -333,7 +386,14 @@ class TokenPriceTracker:
             self.logger.info(f"📝 失敗したトークンを {filename} に保存しました")
             
         except Exception as e:
-            self.logger.error(f"❌ 失敗トークンファイル保存エラー: {e}")
+            error_msg = f"❌ 失敗トークンファイル保存エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
     
     def run_tracking(self):
         """価格追跡を実行"""
@@ -345,7 +405,13 @@ class TokenPriceTracker:
             token_info = self.analyze_pool_tokens()
             
             if not token_info:
-                self.logger.error("❌ 分析に失敗しました")
+                error_msg = "❌ 分析に失敗しました"
+                self.logger.error(error_msg)
+                if self.slack_notifier:
+                    self.slack_notifier.notify_error(
+                        message=error_msg,
+                        system_name="Token Price Tracker"
+                    )
                 return False
             
             # 価格データをDBに保存
@@ -369,7 +435,14 @@ class TokenPriceTracker:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ 追跡実行エラー: {e}")
+            error_msg = f"❌ 追跡実行エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
             return False
 
 def main():
@@ -385,7 +458,20 @@ def main():
             exit(1)
             
     except Exception as e:
-        print(f"❌ エラー: {e}")
+        error_msg = f"❌ エラー: {e}"
+        print(error_msg)
+        # Slack通知（グローバルインスタンスを使用）
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            from utils.slack_notifier import SlackNotifier
+            notifier = SlackNotifier()
+            notifier.notify_error(
+                message=error_msg,
+                system_name="Token Price Tracker",
+                error=e
+            )
+        except Exception:
+            pass  # Slack通知失敗は無視
         exit(1)
 
 if __name__ == "__main__":

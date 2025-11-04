@@ -40,6 +40,15 @@ try:
 except ImportError:
     AWS_AVAILABLE = False
 
+# Slack通知のインポート
+import traceback
+sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from utils.slack_notifier import SlackNotifier
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
+
 class ConvexEC2Complete:
     def __init__(self):
         """EC2用Convex Finance完全版スクレイパー初期化"""
@@ -76,6 +85,18 @@ class ConvexEC2Complete:
         
         # シグナルハンドラー設定
         self.setup_signal_handlers()
+        
+        # Slack通知の初期化
+        if SLACK_AVAILABLE:
+            try:
+                self.slack_notifier = SlackNotifier()
+                self.logger.info("✅ Slack通知機能が有効です")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Slack通知初期化エラー: {e}")
+                self.slack_notifier = None
+        else:
+            self.slack_notifier = None
+            self.logger.warning("⚠️ Slack通知モジュールが利用できません")
         
         self.logger.info("🚀 Convex EC2 Complete スクレイパー初期化完了")
         self.logger.info("🔒 重複実行防止機能付き")
@@ -171,7 +192,14 @@ class ConvexEC2Complete:
     def setup_aws(self):
         """AWS設定"""
         if not AWS_AVAILABLE:
-            self.logger.error("❌ boto3が利用できません")
+            error_msg = "❌ boto3が利用できません"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=Exception("boto3 not available")
+                )
             return False
         
         try:
@@ -188,12 +216,26 @@ class ConvexEC2Complete:
                     self.tables[table_name] = table
                     self.logger.info(f"✅ テーブル '{table_name}' に接続しました")
                 except ClientError as e:
-                    self.logger.error(f"❌ テーブル '{table_name}' への接続に失敗: {e}")
+                    error_msg = f"❌ テーブル '{table_name}' への接続に失敗: {e}"
+                    self.logger.error(error_msg)
+                    if self.slack_notifier:
+                        self.slack_notifier.notify_error(
+                            message=error_msg,
+                            system_name="Convex EC2 Complete",
+                            error=e
+                        )
             
             self.logger.info("✅ AWS DynamoDB接続成功")
             return True
         except Exception as e:
-            self.logger.error(f"❌ AWS接続エラー: {e}")
+            error_msg = f"❌ AWS接続エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
             return False
 
     def setup_signal_handlers(self):
@@ -986,11 +1028,15 @@ class ConvexEC2Complete:
                 with open(self.failed_matching_file, 'r', encoding='utf-8') as f:
                     failed_pools = json.load(f)
             
+            is_new_entry = pool_name not in failed_pools
+            
             # プール情報を更新
             if pool_name in failed_pools:
                 # 既存エントリの更新
+                old_failure_count = failed_pools[pool_name].get('failure_count', 0)
                 failed_pools[pool_name]['last_seen'] = datetime.now().isoformat()
-                failed_pools[pool_name]['failure_count'] = failed_pools[pool_name].get('failure_count', 0) + 1
+                failed_pools[pool_name]['failure_count'] = old_failure_count + 1
+                new_failure_count = failed_pools[pool_name]['failure_count']
             else:
                 # 新規エントリとして保存
                 failed_pools[pool_name] = {
@@ -1000,11 +1046,41 @@ class ConvexEC2Complete:
                     'failure_count': 1,
                     'status': 'pending'  # pending, resolved, ignored
                 }
+                new_failure_count = 1
                 self.logger.info(f"📝 マッチング失敗プールを記録: {pool_name}")
             
             # JSONファイルに保存
             with open(self.failed_matching_file, 'w', encoding='utf-8') as f:
                 json.dump(failed_pools, f, ensure_ascii=False, indent=2)
+            
+            # Slack通知を送信（新規エントリの場合、または失敗回数が5, 10, 20回などの閾値に達した場合）
+            if self.slack_notifier:
+                notification_thresholds = [1, 5, 10, 20, 50, 100]
+                should_notify = is_new_entry or new_failure_count in notification_thresholds
+                
+                if should_notify:
+                    jst_now = datetime.now(self.JST)
+                    timestamp = jst_now.strftime("%Y-%m-%d %H:%M:%S JST")
+                    
+                    message = f"factory_idマッチング失敗: {pool_name}\n"
+                    message += f"失敗回数: {new_failure_count}回\n"
+                    message += f"初回発見: {failed_pools[pool_name].get('first_seen', 'N/A')}\n"
+                    message += f"最終発見: {failed_pools[pool_name].get('last_seen', 'N/A')}\n"
+                    if token_symbols:
+                        message += f"トークンシンボル: {', '.join(token_symbols)}\n"
+                    message += f"\n対応方法:\n"
+                    message += f"1. manual_pool_mapping.jsonに対応表を追加\n"
+                    message += f"2. update_existing_convex_pool_metrics.pyを実行して既存データを更新\n"
+                    message += f"3. failed_pool_matching.jsonから該当エントリを削除"
+                    
+                    try:
+                        self.slack_notifier.notify_warning(
+                            message=message,
+                            system_name="Convex EC2 Complete"
+                        )
+                        self.logger.info(f"✅ Slack通知を送信しました: {pool_name} (失敗回数: {new_failure_count}回)")
+                    except Exception as e:
+                        self.logger.error(f"❌ Slack通知送信エラー: {e}")
             
         except Exception as e:
             self.logger.error(f"❌ 失敗プール保存エラー: {e}")
@@ -1442,7 +1518,14 @@ class ConvexEC2Complete:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ DynamoDB保存エラー: {e}")
+            error_msg = f"❌ DynamoDB保存エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
             return False
 
     def run_complete_job(self):
@@ -1498,40 +1581,81 @@ class ConvexEC2Complete:
                 return True
             else:
                 self.error_count += 1
-                self.logger.error("❌ データ取得・保存失敗")
+                error_msg = "❌ データ取得・保存失敗"
+                self.logger.error(error_msg)
+                if self.slack_notifier:
+                    self.slack_notifier.notify_error(
+                        message=error_msg,
+                        system_name="Convex EC2 Complete"
+                    )
                 return False
         
         except Exception as e:
             self.error_count += 1
-            self.logger.error(f"❌ ジョブエラー: {e}")
+            error_msg = f"❌ ジョブエラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
             return False
         
         finally:
             self.is_running = False
 
-    def start_production(self, interval_minutes: int = 60):
-        """本番環境定期実行開始（完全版・正確な時間制御）"""
+    def start_production(self, interval_minutes: int = 60, target_minute: int = 30):
+        """本番環境定期実行開始（完全版・正確な時間制御）
+        
+        Args:
+            interval_minutes: 実行間隔（分）
+            target_minute: 毎時の実行分（0-59）。例: 30なら毎時30分に実行
+        """
         # 排他ロック取得
         if not self.acquire_lock():
-            self.logger.error("❌ 排他ロック取得に失敗しました。他のプロセスが実行中です。")
+            error_msg = "❌ 排他ロック取得に失敗しました。他のプロセスが実行中です。"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete"
+                )
             sys.exit(1)
         
         try:
-            self.logger.info(f"🚀 EC2本番環境定期実行開始（{interval_minutes}分間隔・正確な時間制御）")
+            self.logger.info(f"🚀 EC2本番環境定期実行開始（{interval_minutes}分間隔・毎時{target_minute}分実行）")
             self.logger.info("🔒 重複実行防止機能有効")
             self.logger.info("🇯🇵 全データを日本時間（JST）で保存")
             self.logger.info("📊 履歴データ + 最新データ + 価格履歴")
             self.logger.info("💰 CRV/CVX価格（CoinGecko）+ USD/JPY為替（AlphaVantage）")
             self.logger.info("🌐 Webスクレイピング（CVX、cvxCRV、Curveプール）")
-            self.logger.info("⏰ 正確な60分間隔実行（累積誤差なし）")
+            self.logger.info(f"⏰ 毎時{target_minute}分に実行（正確な時間制御）")
             
-            # 初回実行
-            self.run_complete_job()
+            # 次回実行時間を計算（毎時target_minute分）
+            now = datetime.now()
+            now_jst = now.astimezone(self.JST)
+            
+            # 今日のtarget_minute分を計算
+            today_target = now_jst.replace(minute=target_minute, second=0, microsecond=0)
+            
+            # 現在時刻がtarget_minute分より前なら今日のtarget_minute分、後なら次の時間のtarget_minute分
+            if now_jst < today_target:
+                next_execution_time = today_target
+                # 初回実行をすぐに実行（現在時刻がtarget_minuteより前の場合）
+                self.logger.info(f"⏰ 初回実行を開始します（次回実行: {next_execution_time.strftime('%Y-%m-%d %H:%M:%S JST')}）")
+                self.run_complete_job()
+            else:
+                # 現在時刻がtarget_minute分以降なら、次の時間のtarget_minute分まで待つ
+                next_execution_time = today_target + timedelta(hours=1)
+                self.logger.info(f"⏰ 次回実行時刻まで待機します（{next_execution_time.strftime('%Y-%m-%d %H:%M:%S JST')}）")
+            
+            # UTCに変換
+            next_execution_time = next_execution_time.astimezone(timezone.utc).replace(tzinfo=None)
             
             # 正確な時間間隔での実行ループ
             interval_seconds = interval_minutes * 60
             last_stats_time = datetime.now()
-            next_execution_time = datetime.now() + timedelta(seconds=interval_seconds)
             
             while True:
                 now = datetime.now()
@@ -1542,8 +1666,15 @@ class ConvexEC2Complete:
                     self.run_complete_job()
                     execution_duration = (datetime.now() - execution_start).total_seconds()
                     
-                    # 次回実行時間を正確に計算（実行時間を考慮しない）
-                    next_execution_time = next_execution_time + timedelta(seconds=interval_seconds)
+                    # 次回実行時間を正確に計算（毎時target_minute分）
+                    # 現在時刻をJSTに変換して次の時間のtarget_minute分を計算
+                    now_jst = datetime.now().astimezone(self.JST)
+                    next_execution_time_jst = now_jst.replace(minute=target_minute, second=0, microsecond=0)
+                    # 現在時刻が既にtarget_minute分を過ぎている場合は次の時間
+                    if now_jst >= next_execution_time_jst:
+                        next_execution_time_jst = next_execution_time_jst + timedelta(hours=1)
+                    # UTCに変換
+                    next_execution_time = next_execution_time_jst.astimezone(timezone.utc).replace(tzinfo=None)
                     
                     # 実行時間をログに記録
                     self.logger.info(f"⏱️ 実行時間: {execution_duration:.1f}秒")
@@ -1570,7 +1701,14 @@ class ConvexEC2Complete:
         except KeyboardInterrupt:
             self.logger.info("🛑 ユーザーによる停止")
         except Exception as e:
-            self.logger.error(f"❌ 実行エラー: {e}")
+            error_msg = f"❌ 実行エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
         finally:
             self.release_lock()
 
@@ -1579,13 +1717,28 @@ def main():
     try:
         # 実行間隔を環境変数から取得（デフォルト60分）
         interval = int(os.getenv('EXECUTION_INTERVAL', '60'))
+        # 実行分を環境変数から取得（デフォルト30分）
+        target_minute = int(os.getenv('EXECUTION_TARGET_MINUTE', '30'))
         
         # スクレイパー初期化・実行
         scraper = ConvexEC2Complete()
-        scraper.start_production(interval_minutes=interval)
+        scraper.start_production(interval_minutes=interval, target_minute=target_minute)
         
     except Exception as e:
-        print(f"❌ メイン関数エラー: {e}")
+        error_msg = f"❌ メイン関数エラー: {e}"
+        print(error_msg)
+        # Slack通知（グローバルインスタンスを使用）
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from utils.slack_notifier import SlackNotifier
+            notifier = SlackNotifier()
+            notifier.notify_error(
+                message=error_msg,
+                system_name="Convex EC2 Complete",
+                error=e
+            )
+        except Exception:
+            pass  # Slack通知失敗は無視
         sys.exit(1)
 
 if __name__ == "__main__":
