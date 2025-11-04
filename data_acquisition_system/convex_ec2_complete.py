@@ -1640,15 +1640,14 @@ class ConvexEC2Complete:
             today_target = now_jst.replace(minute=target_minute, second=0, microsecond=0)
             
             # 現在時刻がtarget_minute分より前なら今日のtarget_minute分、後なら次の時間のtarget_minute分
+            # サービス再起動時でも、すぐに実行せずに次回のtarget_minuteまで待機する
             if now_jst < today_target:
                 next_execution_time = today_target
-                # 初回実行をすぐに実行（現在時刻がtarget_minuteより前の場合）
-                self.logger.info(f"⏰ 初回実行を開始します（次回実行: {next_execution_time.strftime('%Y-%m-%d %H:%M:%S JST')}）")
-                self.run_complete_job()
             else:
                 # 現在時刻がtarget_minute分以降なら、次の時間のtarget_minute分まで待つ
                 next_execution_time = today_target + timedelta(hours=1)
-                self.logger.info(f"⏰ 次回実行時刻まで待機します（{next_execution_time.strftime('%Y-%m-%d %H:%M:%S JST')}）")
+            
+            self.logger.info(f"⏰ 次回実行時刻まで待機します（{next_execution_time.strftime('%Y-%m-%d %H:%M:%S JST')}）")
             
             # UTCに変換
             next_execution_time = next_execution_time.astimezone(timezone.utc).replace(tzinfo=None)
