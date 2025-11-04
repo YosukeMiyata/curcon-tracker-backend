@@ -157,12 +157,23 @@ class SlackNotifier:
                 "fields": text_fields
             })
             
-            # ペイロードの構築
+            # フッターを追加
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"CurConTracker Backend | {timestamp}"
+                    }
+                ]
+            })
+            
+            # ペイロードの構築（blocksのみを使用）
             payload = {
+                "blocks": blocks,
                 "attachments": [
                     {
                         "color": color,
-                        "blocks": blocks,
                         "footer": "CurConTracker Backend",
                         "ts": int(jst_now.timestamp())
                     }
