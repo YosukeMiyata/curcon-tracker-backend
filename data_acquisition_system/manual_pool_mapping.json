@@ -287,5 +287,6 @@
   "ROME+USDT" : "factory-stable-ng-237",
   "crvUSD (ynETHx collateral)" : "oneway-29",
   "USDaf​+frxUSD": "factory-stable-ng-583",
-  "frxUSD​+deUSD": "factory-stable-ng-585"
+  "frxUSD​+deUSD": "factory-stable-ng-585",
+  "MUSD​+sUSDe": "factory-stable-ng-519"
 }
