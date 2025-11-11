@@ -288,5 +288,6 @@
   "crvUSD (ynETHx collateral)" : "oneway-29",
   "USDaf​+frxUSD": "factory-stable-ng-583",
   "frxUSD​+deUSD": "factory-stable-ng-585",
-  "MUSD​+sUSDe": "factory-stable-ng-519"
+  "MUSD​+sUSDe": "factory-stable-ng-519",
+  "crvUSD​+YB": "factory-twocrypto-271"
 }
