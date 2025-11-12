@@ -258,32 +258,10 @@ class ConvexEC2Complete:
         jst_now = datetime.now(self.JST)
         return jst_now.strftime("%Y-%m-%dT%H:%M:%S+09:00")
 
-    def get_crypto_prices(self):
-        """暗号通貨価格取得（CoinGecko）"""
-        try:
-            url = "https://api.coingecko.com/api/v3/simple/price"
-            params = {
-                'ids': 'curve-dao-token,convex-finance',
-                'vs_currencies': 'usd',
-                'include_24hr_change': 'true'
-            }
-            
-            if self.coingecko_api_key:
-                params['x_cg_demo_api_key'] = self.coingecko_api_key
-            
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-            
-            crv_price = data.get('curve-dao-token', {}).get('usd', 0)
-            cvx_price = data.get('convex-finance', {}).get('usd', 0)
-            
-            self.logger.info(f"💰 価格取得成功: CRV=${crv_price:.4f}, CVX=${cvx_price:.4f}")
-            return {'CRV': crv_price, 'CVX': cvx_price}
-            
-        except Exception as e:
-            self.logger.error(f"❌ 暗号通貨価格取得エラー: {e}")
-            return None
+    # CRV/CVX価格取得処理は削除（TokenOHLCDailyテーブルから参照するため）
+    # def get_crypto_prices(self):
+    #     """暗号通貨価格取得（CoinGecko）"""
+    #     ...
 
     def get_usd_jpy_rate(self):
         """USD/JPY為替レート取得（複数のAPIを試行）"""
@@ -436,8 +414,8 @@ class ConvexEC2Complete:
         except:
             return None
 
-    def save_price_data(self, prices, usd_jpy_rate):
-        """価格データをDynamoDBに保存"""
+    def save_usd_jpy_rate(self, usd_jpy_rate):
+        """USD/JPY為替レートをDynamoDBに保存（CRV/CVX価格は削除、TokenOHLCDailyテーブルから参照）"""
         if 'PriceHistory' not in self.tables:
             self.logger.error("❌ PriceHistoryテーブルが利用できません")
             return False
@@ -448,33 +426,6 @@ class ConvexEC2Complete:
             jst_created_at = datetime.now(self.JST).isoformat()
             
             saved_count = 0
-            
-            # CRV/CVX価格を保存
-            for asset, price in prices.items():
-                if price:
-                    # JPY価格を計算
-                    price_jpy = None
-                    if usd_jpy_rate:
-                        price_jpy = price * usd_jpy_rate
-                    
-                    item = {
-                        'asset': asset,
-                        'timestamp': jst_iso_timestamp,
-                        'price_usd': Decimal(str(price)),
-                        'price_jpy': Decimal(str(price_jpy)) if price_jpy else None,
-                        'source': 'CoinGecko',
-                        'created_at': jst_created_at,
-                        'timezone': 'JST'
-                    }
-                    
-                    # NoneやNaN値を除去
-                    item = {k: v for k, v in item.items() if v is not None}
-                    
-                    table.put_item(Item=item)
-                    saved_count += 1
-                    
-                    jpy_display = f"¥{price_jpy:.2f}" if price_jpy else "N/A"
-                    self.logger.info(f"✅ {asset}価格保存: ${price} | {jpy_display}")
             
             # USD/JPY為替レートを保存
             if usd_jpy_rate:
@@ -491,11 +442,12 @@ class ConvexEC2Complete:
                 saved_count += 1
                 self.logger.info(f"✅ USD/JPY為替レート保存: ¥{usd_jpy_rate:.2f}")
             
-            self.logger.info(f"✅ 価格データ保存完了: {saved_count}件")
-            return True
+            if saved_count > 0:
+                self.logger.info(f"✅ 為替レート保存完了: {saved_count}件")
+            return saved_count > 0
             
         except Exception as e:
-            self.logger.error(f"❌ 価格データ保存エラー: {e}")
+            self.logger.error(f"❌ 為替レート保存エラー: {e}")
             return False
 
     def scrape_convex_data(self):
@@ -1538,26 +1490,24 @@ class ConvexEC2Complete:
         start_time = time.time()
         
         try:
-            self.logger.info("🚀 完全版ジョブ開始（Webスクレイピング + 価格取得）")
+            self.logger.info("🚀 完全版ジョブ開始（Webスクレイピング）")
             
-            # 1. 価格データ取得
-            self.logger.info("💰 価格データ取得中...")
-            prices = self.get_crypto_prices()
+            # 1. USD/JPY為替レート取得（CRV/CVX価格はTokenOHLCDailyテーブルから参照するため削除）
             usd_jpy_rate = self.get_usd_jpy_rate()
+            rate_saved = False
+            if usd_jpy_rate:
+                rate_saved = self.save_usd_jpy_rate(usd_jpy_rate)
             
-            # 2. 価格データ保存
-            price_saved = self.save_price_data(prices, usd_jpy_rate)
-            
-            # 3. Convexデータ抽出
+            # 2. Convexデータ抽出
             self.logger.info("📊 Convexデータ取得中...")
             data = self.scrape_convex_data()
             
-            # 4. Convexデータ保存
+            # 3. Convexデータ保存
             convex_saved = False
             if data and data['cvx']['vapr']:
                 convex_saved = self.save_to_dynamodb_jst(data)
             
-            # 5. Curve APIからfactory_idを取得してPoolLatestを更新
+            # 4. Curve APIからfactory_idを取得してPoolLatestを更新
             factory_id_updated = False
             if convex_saved:
                 self.logger.info("🔍 Curve APIからfactory_idを取得中...")
@@ -1566,11 +1516,11 @@ class ConvexEC2Complete:
                     factory_id_updated = self.update_pool_latest_with_factory_ids(api_data)
             
             # 結果判定
-            if price_saved or convex_saved or factory_id_updated:
+            if rate_saved or convex_saved or factory_id_updated:
                 self.success_count += 1
                 status_msg = []
-                if price_saved:
-                    status_msg.append("価格データ")
+                if rate_saved:
+                    status_msg.append("為替レート")
                 if convex_saved:
                     status_msg.append("Convexデータ")
                 if factory_id_updated:
@@ -1627,8 +1577,9 @@ class ConvexEC2Complete:
             self.logger.info(f"🚀 EC2本番環境定期実行開始（{interval_minutes}分間隔・毎時{target_minute}分実行）")
             self.logger.info("🔒 重複実行防止機能有効")
             self.logger.info("🇯🇵 全データを日本時間（JST）で保存")
-            self.logger.info("📊 履歴データ + 最新データ + 価格履歴")
-            self.logger.info("💰 CRV/CVX価格（CoinGecko）+ USD/JPY為替（AlphaVantage）")
+            self.logger.info("📊 履歴データ + 最新データ + 為替レート履歴")
+            self.logger.info("💱 USD/JPY為替（AlphaVantage）")
+            self.logger.info("📈 CRV/CVX価格はTokenOHLCDailyテーブルから参照")
             self.logger.info("🌐 Webスクレイピング（CVX、cvxCRV、Curveプール）")
             self.logger.info(f"⏰ 毎時{target_minute}分に実行（正確な時間制御）")
             
