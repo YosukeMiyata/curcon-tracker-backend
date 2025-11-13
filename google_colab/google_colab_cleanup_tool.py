@@ -136,6 +136,8 @@ class DynamoDBCleanupTool:
             'PriceHistory',
             'TokenPriceHistory',
             'TokenOHLCDaily',
+            'USDJPYHistory',
+            'USDJPYOHLCDaily',
             'PoolLatest',
             'PoolMeta',
             'VaultMeta'
@@ -161,7 +163,7 @@ class DynamoDBCleanupTool:
                     count += response['Count']
 
                 # 最新データ取得
-                if table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily']:
+                if table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -388,7 +390,7 @@ class DynamoDBCleanupTool:
                     else:
                         print(f"   データなし")
 
-                elif table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily']:
+                elif table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(
                         ProjectionExpression='#ts',
@@ -747,9 +749,19 @@ class DynamoDBCleanupTool:
                                             'token': item['token'],
                                             'timestamp': item['timestamp']
                                         }
-                                    else:  # TokenOHLCDaily
+                                    elif table_name == 'TokenOHLCDaily':
                                         key = {
                                             'token': item['token'],
+                                            'timestamp': item['timestamp']
+                                        }
+                                    elif table_name == 'USDJPYHistory':
+                                        key = {
+                                            'asset': item['asset'],
+                                            'timestamp': item['timestamp']
+                                        }
+                                    else:  # USDJPYOHLCDaily
+                                        key = {
+                                            'asset': item['asset'],
                                             'timestamp': item['timestamp']
                                         }
                                     batch_writer.delete_item(Key=key)
@@ -1016,6 +1028,8 @@ class DynamoDBCleanupTool:
             'PriceHistory',
             'TokenPriceHistory',
             'TokenOHLCDaily',
+            'USDJPYHistory',
+            'USDJPYOHLCDaily',
             'PoolLatest'
         ]
 
@@ -1078,6 +1092,16 @@ class DynamoDBCleanupTool:
                                 elif table_name == 'TokenOHLCDaily':
                                     key = {
                                         'token': item['token'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'USDJPYHistory':
+                                    key = {
+                                        'asset': item['asset'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'USDJPYOHLCDaily':
+                                    key = {
+                                        'asset': item['asset'],
                                         'timestamp': item['timestamp']
                                     }
                                 elif table_name == 'PoolLatest':
@@ -1618,6 +1642,244 @@ class DynamoDBCleanupTool:
             
             return False
 
+    def delete_usdjpy_history_all(self, confirm=True):
+        """USDJPYHistoryテーブル全件削除機能（追跡付き）"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print("🗑️ USDJPYHistoryテーブル全件削除機能")
+            print("⚠️ USDJPYHistoryテーブルの全データが削除されます")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input("USDJPYHistoryテーブルの全データを削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("✅ USDJPYHistoryテーブル全件削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print("❌ USDJPYHistoryテーブル削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        # 削除操作を追跡ログに記録
+        caller_info = self.tracker._get_caller_info()
+        additional_data = {
+            'operation': 'full_delete',
+            'table_type': 'usdjpy_history',
+            'confirmation_required': confirm
+        }
+        self.tracker.log_deletion_operation(
+            table_name='USDJPYHistory',
+            operation='full_delete',
+            function_name='delete_usdjpy_history_all',
+            caller_info=caller_info,
+            additional_data=additional_data
+        )
+
+        try:
+            table = self.dynamodb.Table('USDJPYHistory')
+            
+            # テーブルの全データをスキャン
+            response = table.scan()
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response['Items'])
+
+            if items:
+                if confirm:
+                    print(f"   📊 削除対象: {len(items):,}件")
+
+                # バッチ削除
+                deleted_count = 0
+
+                for i in range(0, len(items), 25):
+                    batch = items[i:i+25]
+
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            key = {
+                                'asset': item['asset'],
+                                'timestamp': item['timestamp']
+                            }
+                            batch_writer.delete_item(Key=key)
+                            deleted_count += 1
+
+                    # 進捗表示
+                    if confirm and len(items) > 100 and deleted_count % 100 == 0:
+                        progress = (deleted_count / len(items)) * 100
+                        print(f"   🔄 進捗: {deleted_count:,}/{len(items):,} ({progress:.1f}%)")
+
+                    time.sleep(0.1)  # レート制限対策
+
+                if confirm:
+                    print(f"   ✅ USDJPYHistoryテーブル: {deleted_count:,}件削除完了")
+                
+                # 削除完了ログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='USDJPYHistory',
+                    operation='delete_completed',
+                    function_name='delete_usdjpy_history_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': deleted_count, 'status': 'success'}
+                )
+                
+                return deleted_count
+            else:
+                if confirm:
+                    print(f"   ✅ USDJPYHistoryテーブル: データなし")
+                
+                # 削除対象なしログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='USDJPYHistory',
+                    operation='delete_completed',
+                    function_name='delete_usdjpy_history_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': 0, 'status': 'no_data'}
+                )
+                
+                return 0
+
+        except Exception as e:
+            if confirm:
+                print(f"   ❌ USDJPYHistoryテーブル削除エラー: {e}")
+            
+            # エラーログを記録
+            self.tracker.log_deletion_operation(
+                table_name='USDJPYHistory',
+                operation='delete_error',
+                function_name='delete_usdjpy_history_all',
+                caller_info=caller_info,
+                additional_data={'error': str(e), 'status': 'error'}
+            )
+            
+            return False
+
+    def delete_usdjpy_ohlc_daily_all(self, confirm=True):
+        """USDJPYOHLCDailyテーブル全件削除機能（追跡付き）"""
+        if not self.connection_status:
+            print("❌ DynamoDBに接続できません")
+            return False
+
+        if confirm:
+            print("🗑️ USDJPYOHLCDailyテーブル全件削除機能")
+            print("⚠️ USDJPYOHLCDailyテーブルの全データが削除されます")
+            print("=" * 60)
+            
+            # 確認プロンプト
+            while True:
+                user_input = input("USDJPYOHLCDailyテーブルの全データを削除しますか？ (y/N): ").strip().lower()
+                if user_input in ['y', 'yes']:
+                    print("✅ USDJPYOHLCDailyテーブル全件削除を実行します...")
+                    break
+                elif user_input in ['n', 'no', '']:
+                    print("❌ USDJPYOHLCDailyテーブル削除をキャンセルしました")
+                    return False
+                else:
+                    print("⚠️ 'y' または 'n' を入力してください")
+
+        # 削除操作を追跡ログに記録
+        caller_info = self.tracker._get_caller_info()
+        additional_data = {
+            'operation': 'full_delete',
+            'table_type': 'usdjpy_ohlc_daily',
+            'confirmation_required': confirm
+        }
+        self.tracker.log_deletion_operation(
+            table_name='USDJPYOHLCDaily',
+            operation='full_delete',
+            function_name='delete_usdjpy_ohlc_daily_all',
+            caller_info=caller_info,
+            additional_data=additional_data
+        )
+
+        try:
+            table = self.dynamodb.Table('USDJPYOHLCDaily')
+            
+            # テーブルの全データをスキャン
+            response = table.scan()
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response['Items'])
+
+            if items:
+                if confirm:
+                    print(f"   📊 削除対象: {len(items):,}件")
+
+                # バッチ削除
+                deleted_count = 0
+
+                for i in range(0, len(items), 25):
+                    batch = items[i:i+25]
+
+                    with table.batch_writer() as batch_writer:
+                        for item in batch:
+                            key = {
+                                'asset': item['asset'],
+                                'timestamp': item['timestamp']
+                            }
+                            batch_writer.delete_item(Key=key)
+                            deleted_count += 1
+
+                    # 進捗表示
+                    if confirm and len(items) > 100 and deleted_count % 100 == 0:
+                        progress = (deleted_count / len(items)) * 100
+                        print(f"   🔄 進捗: {deleted_count:,}/{len(items):,} ({progress:.1f}%)")
+
+                    time.sleep(0.1)  # レート制限対策
+
+                if confirm:
+                    print(f"   ✅ USDJPYOHLCDailyテーブル: {deleted_count:,}件削除完了")
+                
+                # 削除完了ログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='USDJPYOHLCDaily',
+                    operation='delete_completed',
+                    function_name='delete_usdjpy_ohlc_daily_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': deleted_count, 'status': 'success'}
+                )
+                
+                return deleted_count
+            else:
+                if confirm:
+                    print(f"   ✅ USDJPYOHLCDailyテーブル: データなし")
+                
+                # 削除対象なしログを記録
+                self.tracker.log_deletion_operation(
+                    table_name='USDJPYOHLCDaily',
+                    operation='delete_completed',
+                    function_name='delete_usdjpy_ohlc_daily_all',
+                    caller_info=caller_info,
+                    additional_data={'deleted_count': 0, 'status': 'no_data'}
+                )
+                
+                return 0
+
+        except Exception as e:
+            if confirm:
+                print(f"   ❌ USDJPYOHLCDailyテーブル削除エラー: {e}")
+            
+            # エラーログを記録
+            self.tracker.log_deletion_operation(
+                table_name='USDJPYOHLCDaily',
+                operation='delete_error',
+                function_name='delete_usdjpy_ohlc_daily_all',
+                caller_info=caller_info,
+                additional_data={'error': str(e), 'status': 'error'}
+            )
+            
+            return False
+
     def list_pools(self):
         """プール一覧表示機能"""
         if not self.connection_status:
@@ -1895,6 +2157,8 @@ class DynamoDBCleanupTool:
             'PriceHistory',
             'TokenPriceHistory',
             'TokenOHLCDaily',
+            'USDJPYHistory',
+            'USDJPYOHLCDaily',
             'PoolLatest',
             'PoolMeta',
             'VaultMeta'
@@ -1938,7 +2202,7 @@ class DynamoDBCleanupTool:
                     else:
                         latest_info = "データなし"
 
-                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily']:
+                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -2111,6 +2375,16 @@ class DynamoDBCleanupTool:
                             elif table_name == 'TokenOHLCDaily':
                                 key = {
                                     'token': item['token'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'USDJPYHistory':
+                                key = {
+                                    'asset': item['asset'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'USDJPYOHLCDaily':
+                                key = {
+                                    'asset': item['asset'],
                                     'timestamp': item['timestamp']
                                 }
                             elif table_name == 'PoolLatest':
@@ -2396,6 +2670,16 @@ def execute_token_ohlc_daily_delete():
     tool = DynamoDBCleanupTool()
     return tool.delete_token_ohlc_daily_all()
 
+def execute_usdjpy_history_delete():
+    """USDJPYHistoryテーブル全件削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_usdjpy_history_all()
+
+def execute_usdjpy_ohlc_daily_delete():
+    """USDJPYOHLCDailyテーブル全件削除実行"""
+    tool = DynamoDBCleanupTool()
+    return tool.delete_usdjpy_ohlc_daily_all()
+
 def show_pool_list():
     """プール一覧表示"""
     tool = DynamoDBCleanupTool()
@@ -2574,6 +2858,8 @@ print("   - execute_poolmeta_delete()          # PoolMetaテーブル全件削�
 print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削除 実行")
 print("   - execute_token_price_history_delete() # TokenPriceHistoryテーブル全件削除 実行")
 print("   - execute_token_ohlc_daily_delete()   # TokenOHLCDailyテーブル全件削除 実行")
+print("   - execute_usdjpy_history_delete()     # USDJPYHistoryテーブル全件削除 実行")
+print("   - execute_usdjpy_ohlc_daily_delete() # USDJPYOHLCDailyテーブル全件削除 実行")
 print("   - debug_vault_meta_structure()       # VaultMetaテーブル構造デバッグ")
 print("   - debug_pool_meta_structure()        # PoolMetaテーブル構造デバッグ")
 print("\n🎯 プール個別削除機能:")
@@ -2595,6 +2881,8 @@ print("   - execute_vaultmeta_delete()         # VaultMetaテーブル全件削�
 print("\n📊 価格履歴テーブル削除:")
 print("   - execute_token_price_history_delete() # TokenPriceHistoryテーブル全件削除")
 print("   - execute_token_ohlc_daily_delete()   # TokenOHLCDailyテーブル全件削除")
+print("   - execute_usdjpy_history_delete()     # USDJPYHistoryテーブル全件削除")
+print("   - execute_usdjpy_ohlc_daily_delete() # USDJPYOHLCDailyテーブル全件削除")
 print("\n🎯 プール個別削除の使用例:")
 print("   # プール一覧を表示")
 print("   pools = show_pool_list()")

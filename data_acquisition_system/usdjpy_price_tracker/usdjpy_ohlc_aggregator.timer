@@ -1,0 +1,13 @@
+[Unit]
+Description=USD/JPY OHLC Data Aggregator Timer (Daily at 00:30 JST)
+Requires=usdjpy_ohlc_aggregator.service
+
+[Timer]
+# 日本時間0時30分（UTC 15時30分）に実行
+OnCalendar=*-*-* 15:30:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+

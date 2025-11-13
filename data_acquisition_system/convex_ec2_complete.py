@@ -206,7 +206,7 @@ class ConvexEC2Complete:
             self.dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
             
             # 定期実行に関係のある全テーブルに接続
-            table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory']
+            table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory', 'USDJPYHistory']
             self.tables = {}
             
             for table_name in table_names:
@@ -415,13 +415,13 @@ class ConvexEC2Complete:
             return None
 
     def save_usd_jpy_rate(self, usd_jpy_rate):
-        """USD/JPY為替レートをDynamoDBに保存（CRV/CVX価格は削除、TokenOHLCDailyテーブルから参照）"""
-        if 'PriceHistory' not in self.tables:
-            self.logger.error("❌ PriceHistoryテーブルが利用できません")
+        """USD/JPY為替レートをUSDJPYHistoryテーブルに保存"""
+        if 'USDJPYHistory' not in self.tables:
+            self.logger.error("❌ USDJPYHistoryテーブルが利用できません")
             return False
             
         try:
-            table = self.tables['PriceHistory']
+            table = self.tables['USDJPYHistory']
             jst_iso_timestamp = self.get_jst_iso_timestamp()
             jst_created_at = datetime.now(self.JST).isoformat()
             
@@ -432,10 +432,11 @@ class ConvexEC2Complete:
                 item = {
                     'asset': 'USDJPY',
                     'timestamp': jst_iso_timestamp,
+                    'timezone': 'JST',
                     'rate': Decimal(str(usd_jpy_rate)),
                     'source': 'AlphaVantage',
-                    'created_at': jst_created_at,
-                    'timezone': 'JST'
+                    'datetime': jst_iso_timestamp,
+                    'created_at': jst_created_at
                 }
                 
                 table.put_item(Item=item)

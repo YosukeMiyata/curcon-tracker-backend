@@ -106,6 +106,20 @@ class DynamoDBComprehensiveViewer:
                     'key_attr': 'token',
                     'key_value': None,  # 複数のトークンがあるため
                     'sort_key': 'timestamp'
+                },
+                'USDJPYHistory': {
+                    'name': 'USD/JPY履歴データ',
+                    'description': 'USD/JPY為替レートの履歴情報',
+                    'key_attr': 'asset',
+                    'key_value': None,  # USDJPY固定だが拡張性のため
+                    'sort_key': 'timestamp'
+                },
+                'USDJPYOHLCDaily': {
+                    'name': 'USD/JPY OHLC日次データ',
+                    'description': 'USD/JPY為替レートの日次OHLC（Open/High/Low/Close）情報',
+                    'key_attr': 'asset',
+                    'key_value': None,  # USDJPY固定だが拡張性のため
+                    'sort_key': 'timestamp'
                 }
             }
             self.connection_status = True
@@ -957,6 +971,175 @@ class DynamoDBComprehensiveViewer:
             print(f"❌ TokenOHLCDailyデータ取得エラー: {e}")
             return pd.DataFrame()
 
+    def get_usdjpy_history_data(self, limit=10000, days=None):
+        """USDJPYHistoryテーブルの履歴データを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('USDJPYHistory')
+
+            scan_params = {'Limit': min(limit, 10000)}  # DynamoDBの1回のスキャン上限
+
+            print(f"🔍 USDJPYHistoryテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response and len(items) < limit:
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(limit - len(items), 10000)
+                response = table.scan(**scan_params)
+                items.extend(response['Items'])
+                if len(items) >= limit:
+                    items = items[:limit]
+                    break
+
+            if items:
+                print(f"   📊 USDJPYHistoryデータ取得: {len(items)}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in items]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['rate']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+
+                # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
+                try:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    print(f"   ✅ datetimeカラム作成完了")
+                except Exception as e:
+                    print(f"⚠️ 日時変換でエラー: {e}")
+                    try:
+                        df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        print(f"   ✅ datetimeカラム作成完了（フォールバック）")
+                    except Exception as e2:
+                        print(f"⚠️ 日時変換でエラー: {e2}")
+                        df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                        print(f"   ✅ datetimeカラム作成完了（最終フォールバック）")
+
+                # 日付フィルタリング（データ取得後）
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 USDJPYHistoryデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 USDJPYHistoryデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 USDJPYHistoryデータ取得完了: {len(df)}件")
+
+                # カラム順序を整理
+                df = self.organize_usdjpy_history_columns(df)
+
+                return df
+            else:
+                print("❌ USDJPYHistoryデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ USDJPYHistoryデータ取得エラー: {e}")
+            return pd.DataFrame()
+
+    def get_usdjpy_ohlc_daily_data(self, limit=10000, days=None):
+        """USDJPYOHLCDailyテーブルのOHLC日次データを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('USDJPYOHLCDaily')
+
+            scan_params = {'Limit': min(limit, 10000)}  # DynamoDBの1回のスキャン上限
+
+            print(f"🔍 USDJPYOHLCDailyテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+            items = response['Items']
+
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response and len(items) < limit:
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(limit - len(items), 10000)
+                response = table.scan(**scan_params)
+                items.extend(response['Items'])
+                if len(items) >= limit:
+                    items = items[:limit]
+                    break
+
+            if items:
+                print(f"   📊 USDJPYOHLCDailyデータ取得: {len(items)}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in items]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['open', 'high', 'low', 'close', 'sample_count']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+                
+                # sample_countを整数に変換
+                if 'sample_count' in df.columns:
+                    df['sample_count'] = df['sample_count'].astype('Int64')
+                    print(f"   ✅ sample_countを整数に変換")
+
+                # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
+                try:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    print(f"   ✅ datetimeカラム作成完了")
+                except Exception as e:
+                    print(f"⚠️ 日時変換でエラー: {e}")
+                    try:
+                        df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        print(f"   ✅ datetimeカラム作成完了（フォールバック）")
+                    except Exception as e2:
+                        print(f"⚠️ 日時変換でエラー: {e2}")
+                        df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                        print(f"   ✅ datetimeカラム作成完了（最終フォールバック）")
+
+                # 日付フィルタリング（データ取得後）
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 USDJPYOHLCDailyデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 USDJPYOHLCDailyデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 USDJPYOHLCDailyデータ取得完了: {len(df)}件")
+
+                # カラム順序を整理
+                df = self.organize_usdjpy_ohlc_daily_columns(df)
+
+                return df
+            else:
+                print("❌ USDJPYOHLCDailyデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ USDJPYOHLCDailyデータ取得エラー: {e}")
+            return pd.DataFrame()
+
     def display_data_preview(self, df, title, max_rows=5):
         """データのプレビューを表示（CSV出力と同じ項目順序）"""
         if df.empty:
@@ -1551,6 +1734,49 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_usdjpy_history_columns(self, df):
+        """USDJPYHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（USDJPYHistory用）
+        desired_columns = [
+            'timezone', 'timestamp', 'asset', 'rate', 'source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_usdjpy_ohlc_daily_columns(self, df):
+        """USDJPYOHLCDailyデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト（USDJPYOHLCDaily用）
+        desired_columns = [
+            'timezone', 'timestamp', 'asset', 'open', 'high', 'low', 'close',
+            'sample_count', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
     def organize_pool_meta_columns(self, df):
         """PoolMetaデータのカラム順序を整理"""
         if df.empty:
@@ -1776,6 +2002,12 @@ class DynamoDBComprehensiveViewer:
         elif table_type.lower() in ['tokenohlcdaily', 'token_ohlc_daily']:
             df = self.get_token_ohlc_daily_data(limit=5000, days=days)
             filename = f'token_ohlc_daily_data_{timestamp}.csv'
+        elif table_type.lower() in ['usdjpyhistory', 'usdjpy_history']:
+            df = self.get_usdjpy_history_data(limit=10000, days=days)
+            filename = f'usdjpy_history_data_{timestamp}.csv'
+        elif table_type.lower() in ['usdjpyohlcdaily', 'usdjpy_ohlc_daily']:
+            df = self.get_usdjpy_ohlc_daily_data(limit=10000, days=days)
+            filename = f'usdjpy_ohlc_daily_data_{timestamp}.csv'
         elif table_type.lower() in ['poolmeta', 'pool_meta']:
             df = self.get_pool_meta_data(limit=5000)
             filename = f'pool_meta_data_{timestamp}.csv'
@@ -1813,6 +2045,14 @@ class DynamoDBComprehensiveViewer:
             # TokenOHLCDailyデータの場合は既にget_token_ohlc_daily_data内でカラム順序を整理済み
             elif table_type.lower() in ['tokenohlcdaily', 'token_ohlc_daily']:
                 print(f"📋 TokenOHLCDailyカラム順序: {list(df.columns)}")
+            # USDJPYHistoryデータの場合は既にget_usdjpy_history_data内でカラム順序を整理済み
+            elif table_type.lower() in ['usdjpyhistory', 'usdjpy_history']:
+                df = self.organize_usdjpy_history_columns(df)
+                print(f"📋 USDJPYHistoryカラム順序: {list(df.columns)}")
+            # USDJPYOHLCDailyデータの場合は既にget_usdjpy_ohlc_daily_data内でカラム順序を整理済み
+            elif table_type.lower() in ['usdjpyohlcdaily', 'usdjpy_ohlc_daily']:
+                df = self.organize_usdjpy_ohlc_daily_columns(df)
+                print(f"📋 USDJPYOHLCDailyカラム順序: {list(df.columns)}")
             # PoolMetaデータの場合はカラム順序を整理
             elif table_type.lower() in ['poolmeta', 'pool_meta']:
                 df = self.organize_pool_meta_columns(df)
@@ -1926,6 +2166,16 @@ def export_token_ohlc_daily_data(days=7):
     viewer = DynamoDBComprehensiveViewer()
     viewer.export_single_table('token_ohlc_daily', days=days)
 
+def export_usdjpy_history_data(days=7):
+    """USDJPYHistoryデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('usdjpy_history', days=days)
+
+def export_usdjpy_ohlc_daily_data(days=7):
+    """USDJPYOHLCDailyデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('usdjpy_ohlc_daily', days=days)
+
 def show_trends():
     """トレンドチャート表示"""
     viewer = DynamoDBComprehensiveViewer()
@@ -1970,6 +2220,26 @@ def show_token_ohlc_daily_data(limit=20, token=None):
         df = viewer.organize_token_ohlc_daily_columns(df)
         print(f"📋 TokenOHLCDailyカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "TokenOHLCDailyデータ", max_rows=limit)
+
+def show_usdjpy_history_data(limit=20):
+    """USDJPYHistoryデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_usdjpy_history_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_usdjpy_history_columns(df)
+        print(f"📋 USDJPYHistoryカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "USDJPYHistoryデータ", max_rows=limit)
+
+def show_usdjpy_ohlc_daily_data(limit=20):
+    """USDJPYOHLCDailyデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_usdjpy_ohlc_daily_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_usdjpy_ohlc_daily_columns(df)
+        print(f"📋 USDJPYOHLCDailyカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "USDJPYOHLCDailyデータ", max_rows=limit)
 
 def show_pool_meta_data(limit=100):
     """PoolMetaデータを表示"""
@@ -2285,6 +2555,8 @@ print("   - export_pool_latest_data()           # PoolLatestデータのみエ�
 print("   - export_price_history_data(7)        # PriceHistoryデータのみエクスポート")
 print("   - export_token_price_history_data(7)  # TokenPriceHistoryデータのみエクスポート")
 print("   - export_token_ohlc_daily_data(7)    # TokenOHLCDailyデータのみエクスポート")
+print("   - export_usdjpy_history_data(7)     # USDJPYHistoryデータのみエクスポート")
+print("   - export_usdjpy_ohlc_daily_data(7)   # USDJPYOHLCDailyデータのみエクスポート")
 print("   - export_pool_meta_data()             # PoolMetaデータのみエクスポート")
 print("   - export_vault_meta_data()            # VaultMetaデータのみエクスポート")
 print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
@@ -2294,6 +2566,8 @@ print("   - show_pool_latest_data(20)           # PoolLatestデータを表示")
 print("   - show_price_history_data(20, 'CVX')  # PriceHistoryデータを表示（シンボル指定可能）")
 print("   - show_token_price_history_data(20, 'CVX') # TokenPriceHistoryデータを表示（シンボル指定可能）")
 print("   - show_token_ohlc_daily_data(20, 'CVX')    # TokenOHLCDailyデータを表示（トークン指定可能）")
+print("   - show_usdjpy_history_data(20)            # USDJPYHistoryデータを表示")
+print("   - show_usdjpy_ohlc_daily_data(20)         # USDJPYOHLCDailyデータを表示")
 print("   - show_pool_meta_data(100)            # PoolMetaデータを表示")
 print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
 print("   - show_convex_pool_metrics_data(100)  # ConvexPoolMetricsデータを表示")
