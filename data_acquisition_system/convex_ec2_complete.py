@@ -26,7 +26,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
+from collections import defaultdict
 
 # 環境変数読み込み
 from dotenv import load_dotenv
@@ -35,7 +36,7 @@ from dotenv import load_dotenv
 try:
     import boto3
     from botocore.exceptions import ClientError
-    from boto3.dynamodb.conditions import Attr
+    from boto3.dynamodb.conditions import Attr, Key
     AWS_AVAILABLE = True
 except ImportError:
     AWS_AVAILABLE = False
@@ -206,7 +207,7 @@ class ConvexEC2Complete:
             self.dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
             
             # 定期実行に関係のある全テーブルに接続
-            table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory', 'USDJPYHistory']
+            table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory', 'USDJPYHistory', 'CvxStakeHistory', 'CvxStakeOHLCDaily']
             self.tables = {}
             
             for table_name in table_names:
@@ -1321,9 +1322,9 @@ class ConvexEC2Complete:
             self.logger.info(f"   日本時間: {self.get_jst_timestamp()}")
             self.logger.info(f"   保存タイムスタンプ: {jst_iso_timestamp}")
 
-            # CVXデータを保存
-            if data['cvx'] and data['cvx']['vapr'] and 'CvxStakeMetrics' in self.tables:
-                table = self.tables['CvxStakeMetrics']
+            # CVXデータを保存（CvxStakeHistoryテーブルに保存）
+            if data['cvx'] and data['cvx']['vapr'] and 'CvxStakeHistory' in self.tables:
+                table = self.tables['CvxStakeHistory']
                 
                 item = {
                     'token': 'CVX',
@@ -1334,7 +1335,8 @@ class ConvexEC2Complete:
                     'tvl_numeric': self.convert_to_decimal(f"${data['cvx']['tvl']}"),
                     'created_at': jst_created_at,  # 日本時間
                     'data_source': 'convex_ec2_complete',
-                    'timezone': 'JST'
+                    'timezone': 'JST',
+                    'datetime': jst_iso_timestamp  # datetimeフィールドも追加
                 }
                 
                 table.put_item(Item=item)
@@ -1481,6 +1483,256 @@ class ConvexEC2Complete:
                 )
             return False
 
+    def aggregate_yesterday_ohlc_and_clear_history(self):
+        """前日のCvxStakeHistoryデータをOHLC集約してCvxStakeOHLCDailyに保存し、CvxStakeHistoryをクリア"""
+        try:
+            self.logger.info("📊 前日のOHLC集約とCvxStakeHistoryクリア処理開始")
+            
+            # 前日の日付を取得
+            now_jst = datetime.now().astimezone(self.JST)
+            yesterday = now_jst - timedelta(days=1)
+            yesterday_date_str = yesterday.strftime('%Y-%m-%d')
+            yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            self.logger.info(f"📅 集約対象日: {yesterday_date_str}")
+            
+            # 1. 前日のCvxStakeHistoryデータを取得
+            if 'CvxStakeHistory' not in self.tables:
+                self.logger.error("❌ CvxStakeHistoryテーブルに接続できません")
+                return False
+            
+            history_table = self.tables['CvxStakeHistory']
+            response = history_table.query(
+                KeyConditionExpression=Key('token').eq('CVX')
+            )
+            
+            items = response['Items']
+            
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = history_table.query(
+                    KeyConditionExpression=Key('token').eq('CVX'),
+                    ExclusiveStartKey=response['LastEvaluatedKey']
+                )
+                items.extend(response['Items'])
+            
+            # 前日のデータのみフィルタリング
+            yesterday_items = []
+            for item in items:
+                timestamp_str = item.get('timestamp', '')
+                if not timestamp_str:
+                    continue
+                
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    timestamp_jst = timestamp.astimezone(self.JST)
+                    
+                    if yesterday_start <= timestamp_jst <= yesterday_end:
+                        yesterday_items.append(item)
+                except (ValueError, TypeError):
+                    continue
+            
+            if not yesterday_items:
+                self.logger.warning(f"⚠️ {yesterday_date_str}のデータがありません。クリア処理のみ実行します。")
+                # データがなくてもクリア処理は実行
+                self.clear_cvx_stake_history_table()
+                return True
+            
+            self.logger.info(f"✅ {len(yesterday_items)}件の前日データを取得しました")
+            
+            # 2. OHLCデータを集約（vaprとtvlの2つのtype）
+            vapr_ohlc = self.aggregate_ohlc_for_type(yesterday_items, 'vapr', yesterday_date_str)
+            tvl_ohlc = self.aggregate_ohlc_for_type(yesterday_items, 'tvl', yesterday_date_str)
+            
+            # 3. CvxStakeOHLCDailyテーブルに保存
+            if 'CvxStakeOHLCDaily' not in self.tables:
+                self.logger.error("❌ CvxStakeOHLCDailyテーブルに接続できません")
+                return False
+            
+            ohlc_table = self.tables['CvxStakeOHLCDaily']
+            jst_created_at = datetime.now(self.JST).isoformat()
+            date_dt = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            jst_datetime = date_dt.isoformat()
+            
+            saved_count = 0
+            
+            # vaprデータを保存
+            if vapr_ohlc:
+                item = {
+                    'type': 'vapr',
+                    'timestamp': yesterday_date_str,
+                    'timezone': 'JST',
+                    'token': 'CVX',
+                    'open': Decimal(str(vapr_ohlc['open'])),
+                    'high': Decimal(str(vapr_ohlc['high'])),
+                    'low': Decimal(str(vapr_ohlc['low'])),
+                    'close': Decimal(str(vapr_ohlc['close'])),
+                    'sample_count': int(vapr_ohlc['sample_count']),
+                    'data_source': vapr_ohlc.get('data_source', 'convex_ec2_complete'),
+                    'datetime': jst_datetime,
+                    'created_at': jst_created_at
+                }
+                ohlc_table.put_item(Item=item)
+                saved_count += 1
+                self.logger.info(f"✅ vapr OHLC保存: {yesterday_date_str} - O={vapr_ohlc['open']:.6f}, H={vapr_ohlc['high']:.6f}, L={vapr_ohlc['low']:.6f}, C={vapr_ohlc['close']:.6f}")
+            
+            # tvlデータを保存
+            if tvl_ohlc:
+                item = {
+                    'type': 'tvl',
+                    'timestamp': yesterday_date_str,
+                    'timezone': 'JST',
+                    'token': 'CVX',
+                    'open': Decimal(str(tvl_ohlc['open'])),
+                    'high': Decimal(str(tvl_ohlc['high'])),
+                    'low': Decimal(str(tvl_ohlc['low'])),
+                    'close': Decimal(str(tvl_ohlc['close'])),
+                    'sample_count': int(tvl_ohlc['sample_count']),
+                    'data_source': tvl_ohlc.get('data_source', 'convex_ec2_complete'),
+                    'datetime': jst_datetime,
+                    'created_at': jst_created_at
+                }
+                ohlc_table.put_item(Item=item)
+                saved_count += 1
+                self.logger.info(f"✅ tvl OHLC保存: {yesterday_date_str} - O={tvl_ohlc['open']:.6f}, H={tvl_ohlc['high']:.6f}, L={tvl_ohlc['low']:.6f}, C={tvl_ohlc['close']:.6f}")
+            
+            if saved_count == 0:
+                self.logger.warning("⚠️ OHLCデータの保存に失敗しました")
+                return False
+            
+            # 4. CvxStakeHistoryテーブルをクリア
+            if not self.clear_cvx_stake_history_table():
+                self.logger.error("❌ CvxStakeHistoryテーブルのクリアに失敗しました")
+                return False
+            
+            self.logger.info(f"✅ 前日のOHLC集約とCvxStakeHistoryクリア処理完了: {saved_count}件のOHLCデータを保存")
+            return True
+            
+        except Exception as e:
+            error_msg = f"❌ OHLC集約・クリア処理エラー: {e}"
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
+            return False
+    
+    def aggregate_ohlc_for_type(self, items: List[Dict], type_name: str, date_str: str) -> Optional[Dict]:
+        """OHLCデータを集約（vaprまたはtvl）"""
+        if not items:
+            return None
+        
+        values = []
+        for item in items:
+            if type_name == 'vapr':
+                value_numeric = item.get('vapr_numeric')
+            elif type_name == 'tvl':
+                value_numeric = item.get('tvl_numeric')
+            else:
+                continue
+            
+            if value_numeric is None:
+                continue
+            
+            try:
+                if isinstance(value_numeric, Decimal):
+                    value = float(value_numeric)
+                else:
+                    value = float(value_numeric)
+                
+                values.append({
+                    'timestamp': item.get('timestamp', ''),
+                    'value': value,
+                    'data_source': item.get('data_source', 'convex_ec2_complete')
+                })
+            except (ValueError, TypeError):
+                continue
+        
+        if not values:
+            return None
+        
+        # タイムスタンプでソート
+        sorted_values = sorted(values, key=lambda x: x['timestamp'])
+        
+        # OHLCを計算
+        open_value = sorted_values[0]['value']
+        close_value = sorted_values[-1]['value']
+        high_value = max(v['value'] for v in sorted_values)
+        low_value = min(v['value'] for v in sorted_values)
+        sample_count = len(sorted_values)
+        data_source = sorted_values[0].get('data_source', 'convex_ec2_complete')
+        
+        return {
+            'open': open_value,
+            'high': high_value,
+            'low': low_value,
+            'close': close_value,
+            'sample_count': sample_count,
+            'data_source': data_source
+        }
+    
+    def clear_cvx_stake_history_table(self) -> bool:
+        """CvxStakeHistoryテーブルをクリア"""
+        try:
+            if 'CvxStakeHistory' not in self.tables:
+                self.logger.error("❌ CvxStakeHistoryテーブルに接続できません")
+                return False
+            
+            table = self.tables['CvxStakeHistory']
+            
+            # 全データを取得
+            response = table.query(
+                KeyConditionExpression=Key('token').eq('CVX')
+            )
+            items = response['Items']
+            
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.query(
+                    KeyConditionExpression=Key('token').eq('CVX'),
+                    ExclusiveStartKey=response['LastEvaluatedKey']
+                )
+                items.extend(response['Items'])
+            
+            if not items:
+                self.logger.info("📊 CvxStakeHistoryテーブルは既に空です")
+                return True
+            
+            # バッチ削除
+            deleted_count = 0
+            for i in range(0, len(items), 25):
+                batch = items[i:i+25]
+                
+                with table.batch_writer() as batch_writer:
+                    for item in batch:
+                        key = {
+                            'token': item['token'],
+                            'timestamp': item['timestamp']
+                        }
+                        batch_writer.delete_item(Key=key)
+                        deleted_count += 1
+            
+            self.logger.info(f"✅ CvxStakeHistoryテーブルをクリアしました: {deleted_count}件削除")
+            return True
+            
+        except Exception as e:
+            error_msg = f"❌ CvxStakeHistoryテーブルクリアエラー: {e}"
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
+            return False
+
     def run_complete_job(self):
         """完全版ジョブ実行（Webスクレイピング + 価格取得）"""
         if self.is_running:
@@ -1491,6 +1743,16 @@ class ConvexEC2Complete:
         start_time = time.time()
         
         try:
+            # 現在時刻を取得（JST）
+            now_jst = datetime.now().astimezone(self.JST)
+            
+            # 午前0時30分の場合、前日のOHLC集約とCvxStakeHistoryクリアを実行
+            if now_jst.hour == 0 and now_jst.minute == 30:
+                self.logger.info("🌅 午前0時30分: 前日のOHLC集約とCvxStakeHistoryクリア処理を実行します")
+                ohlc_success = self.aggregate_yesterday_ohlc_and_clear_history()
+                if not ohlc_success:
+                    self.logger.error("❌ OHLC集約・クリア処理が失敗しましたが、通常の処理を続行します")
+            
             self.logger.info("🚀 完全版ジョブ開始（Webスクレイピング）")
             
             # 1. USD/JPY為替レート取得（CRV/CVX価格はTokenOHLCDailyテーブルから参照するため削除）

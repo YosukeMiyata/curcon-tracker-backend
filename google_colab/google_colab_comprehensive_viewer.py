@@ -120,6 +120,20 @@ class DynamoDBComprehensiveViewer:
                     'key_attr': 'asset',
                     'key_value': None,  # USDJPY固定だが拡張性のため
                     'sort_key': 'timestamp'
+                },
+                'CvxStakeHistory': {
+                    'name': 'CVXステーキング履歴データ',
+                    'description': 'CVXトークンのステーキング履歴情報',
+                    'key_attr': 'token',
+                    'key_value': 'CVX',
+                    'sort_key': 'timestamp'
+                },
+                'CvxStakeOHLCDaily': {
+                    'name': 'CVXステーキングOHLC日次データ',
+                    'description': 'CVXステーキングの日次OHLC（Open/High/Low/Close）情報',
+                    'key_attr': 'type',
+                    'key_value': None,  # vaprとtvlの2つのtypeがあるため
+                    'sort_key': 'timestamp'
                 }
             }
             self.connection_status = True
@@ -325,6 +339,177 @@ class DynamoDBComprehensiveViewer:
 
         except Exception as e:
             print(f"❌ CVXデータ取得エラー: {e}")
+            return pd.DataFrame()
+
+    def get_cvx_stake_history_data(self, limit=10, days=None):
+        """CvxStakeHistoryテーブルのCVXステーキング履歴データを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('CvxStakeHistory')
+
+            # 条件設定
+            query_params = {
+                'KeyConditionExpression': Key('token').eq('CVX'),
+                'ScanIndexForward': False,
+                'Limit': limit
+            }
+
+            # daysパラメータはCVXデータでは使用しない（パーティションキー制限のため）
+
+            response = table.query(**query_params)
+
+            if response['Items']:
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in response['Items']]
+                df = pd.DataFrame(converted_items)
+
+                # 数値変換（Decimal型対応）
+                if 'vapr_numeric' not in df.columns:
+                    if 'vapr' in df.columns:
+                        df['vapr_numeric'] = pd.to_numeric(df['vapr'].astype(str).str.replace('%', '').str.replace(',', ''), errors='coerce')
+                else:
+                    df['vapr_numeric'] = pd.to_numeric(df['vapr_numeric'], errors='coerce')
+
+                if 'tvl_numeric' not in df.columns:
+                    if 'tvl' in df.columns:
+                        df['tvl_numeric'] = pd.to_numeric(df['tvl'].astype(str).str.replace('$', '').str.replace(',', '').str.replace('M', '000000').str.replace('B', '000000000'), errors='coerce')
+                else:
+                    df['tvl_numeric'] = pd.to_numeric(df['tvl_numeric'], errors='coerce')
+
+                # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
+                try:
+                    # まず文字列として処理してから日時変換
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    # タイムゾーン情報を完全に除去（UTC+09:00などの形式に対応）
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                except Exception as e:
+                    try:
+                        # フォールバック: 文字列から直接変換
+                        df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    except Exception as e2:
+                        print(f"⚠️ 日時変換でエラー: {e2}")
+                        df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
+                # 日付フィルタリング（データ取得後）
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        # タイムゾーン情報を除去したdatetimeで比較
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 CvxStakeHistoryデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 CvxStakeHistoryデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 CvxStakeHistoryデータ取得完了: {len(df)}件")
+
+                return df
+            else:
+                print("❌ CvxStakeHistoryデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ CvxStakeHistoryデータ取得エラー: {e}")
+            return pd.DataFrame()
+
+    def get_cvx_stake_ohlc_daily_data(self, limit=1000, days=None, type_name=None):
+        """CvxStakeOHLCDailyテーブルのOHLC日次データを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+
+        try:
+            table = self.dynamodb.Table('CvxStakeOHLCDaily')
+
+            # フィルター条件を構築
+            filter_conditions = []
+
+            if type_name:
+                # typeカラムでフィルタリング
+                filter_conditions.append(Attr('type').eq(type_name))
+
+            scan_params = {'Limit': limit}
+            if filter_conditions:
+                scan_params['FilterExpression'] = filter_conditions[0]
+                for condition in filter_conditions[1:]:
+                    scan_params['FilterExpression'] = scan_params['FilterExpression'] & condition
+
+            print(f"🔍 CvxStakeOHLCDailyテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+
+            if response['Items']:
+                print(f"   📊 CvxStakeOHLCDailyデータ取得: {len(response['Items'])}件")
+                # Decimal型をfloat型に変換
+                converted_items = [convert_decimal_to_float(item) for item in response['Items']]
+                df = pd.DataFrame(converted_items)
+
+                print(f"   📋 カラム一覧: {list(df.columns)}")
+
+                # 数値変換（Decimal型対応）
+                numeric_columns = ['open', 'high', 'low', 'close', 'sample_count']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                        print(f"   ✅ {col}を数値変換")
+                
+                # sample_countを整数に変換
+                if 'sample_count' in df.columns:
+                    df['sample_count'] = df['sample_count'].astype('Int64')
+                    print(f"   ✅ sample_countを整数に変換")
+
+                # タイムスタンプを日時型に変換（タイムゾーン問題を回避）
+                try:
+                    # まず文字列として処理してから日時変換
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    # タイムゾーン情報を完全に除去（UTC+09:00などの形式に対応）
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                    print(f"   ✅ datetimeカラム作成完了")
+                except Exception as e:
+                    print(f"⚠️ 日時変換でエラー: {e}")
+                    try:
+                        # フォールバック: 文字列から直接変換
+                        df['datetime'] = pd.to_datetime(df['timestamp'].astype(str), errors='coerce')
+                        if df['datetime'].dt.tz is not None:
+                            df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                        print(f"   ✅ datetimeカラム作成完了（フォールバック）")
+                    except Exception as e2:
+                        print(f"⚠️ 日時変換でエラー: {e2}")
+                        df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                        print(f"   ✅ datetimeカラム作成完了（最終フォールバック）")
+                
+                # CvxStakeOHLCDailyデータのカラム順序を整理（datetimeカラム作成後）
+                print(f"🔧 カラム順序整理実行前: {list(df.columns)}")
+                df = self.organize_cvx_stake_ohlc_daily_columns(df)
+
+                # 日付フィルタリング（データ取得後）
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        # タイムゾーン情報を除去したdatetimeで比較
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        # 日付フィルタリング後にカラム順序を再度整理
+                        df = self.organize_cvx_stake_ohlc_daily_columns(df)
+                        print(f"📊 CvxStakeOHLCDailyデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 CvxStakeOHLCDailyデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 CvxStakeOHLCDailyデータ取得完了: {len(df)}件")
+
+                return df
+            else:
+                print("❌ CvxStakeOHLCDailyデータが見つかりません")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"❌ CvxStakeOHLCDailyデータ取得エラー: {e}")
             return pd.DataFrame()
 
     def get_cvxcrv_data(self, limit=10, days=None):
@@ -1612,6 +1797,54 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_cvx_stake_history_columns(self, df):
+        """CvxStakeHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'token', 'vapr', 'tvl', 
+            'vapr_numeric', 'tvl_numeric', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_cvx_stake_ohlc_daily_columns(self, df):
+        """CvxStakeOHLCDailyデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        print(f"🔧 カラム順序整理前: {list(df.columns)}")
+        
+        # 指定された順序のカラムリスト（CvxStakeOHLCDaily用）
+        desired_columns = [
+            'timezone', 'timestamp', 'token', 'type', 'open', 'high', 'low', 'close',
+            'sample_count', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        print(f"🔧 カラム順序整理後: {final_columns}")
+        
+        return df[final_columns]
+
     def organize_pool_metrics_columns(self, df):
         """ConvexPoolMetricsデータのカラム順序を整理"""
         if df.empty:
@@ -2014,6 +2247,12 @@ class DynamoDBComprehensiveViewer:
         elif table_type.lower() in ['vaultmeta', 'vault_meta']:
             df = self.get_vault_meta_data(limit=5000)
             filename = f'vault_meta_data_{timestamp}.csv'
+        elif table_type.lower() in ['cvxstakehistory', 'cvx_stake_history']:
+            df = self.get_cvx_stake_history_data(limit=1000, days=days)
+            filename = f'cvx_stake_history_data_{timestamp}.csv'
+        elif table_type.lower() in ['cvxstakeohlcdaily', 'cvx_stake_ohlc_daily']:
+            df = self.get_cvx_stake_ohlc_daily_data(limit=5000, days=days)
+            filename = f'cvx_stake_ohlc_daily_data_{timestamp}.csv'
         else:
             print(f"❌ 不明なテーブルタイプ: {table_type}")
             return
@@ -2061,6 +2300,13 @@ class DynamoDBComprehensiveViewer:
             elif table_type.lower() in ['vaultmeta', 'vault_meta']:
                 df = self.organize_vault_meta_columns(df)
                 print(f"📋 VaultMetaカラム順序: {list(df.columns)}")
+            # CvxStakeHistoryデータの場合はカラム順序を整理
+            elif table_type.lower() in ['cvxstakehistory', 'cvx_stake_history']:
+                df = self.organize_cvx_stake_history_columns(df)
+                print(f"📋 CvxStakeHistoryカラム順序: {list(df.columns)}")
+            # CvxStakeOHLCDailyデータの場合は既にget_cvx_stake_ohlc_daily_data内でカラム順序を整理済み
+            elif table_type.lower() in ['cvxstakeohlcdaily', 'cvx_stake_ohlc_daily']:
+                print(f"📋 CvxStakeOHLCDailyカラム順序: {list(df.columns)}")
             
             df.to_csv(filename, index=False)
             print(f"✅ {table_type}データ: {filename} ({len(df)}件)")
@@ -2176,6 +2422,16 @@ def export_usdjpy_ohlc_daily_data(days=7):
     viewer = DynamoDBComprehensiveViewer()
     viewer.export_single_table('usdjpy_ohlc_daily', days=days)
 
+def export_cvx_stake_history_data(days=7):
+    """CvxStakeHistoryデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('cvx_stake_history', days=days)
+
+def export_cvx_stake_ohlc_daily_data(days=7):
+    """CvxStakeOHLCDailyデータのみをエクスポート"""
+    viewer = DynamoDBComprehensiveViewer()
+    viewer.export_single_table('cvx_stake_ohlc_daily', days=days)
+
 def show_trends():
     """トレンドチャート表示"""
     viewer = DynamoDBComprehensiveViewer()
@@ -2240,6 +2496,26 @@ def show_usdjpy_ohlc_daily_data(limit=20):
         df = viewer.organize_usdjpy_ohlc_daily_columns(df)
         print(f"📋 USDJPYOHLCDailyカラム順序: {list(df.columns)}")
     viewer.display_data_preview(df, "USDJPYOHLCDailyデータ", max_rows=limit)
+
+def show_cvx_stake_history_data(limit=20):
+    """CvxStakeHistoryデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_cvx_stake_history_data(limit=limit)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_cvx_stake_history_columns(df)
+        print(f"📋 CvxStakeHistoryカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "CvxStakeHistoryデータ", max_rows=limit)
+
+def show_cvx_stake_ohlc_daily_data(limit=20, type_name=None):
+    """CvxStakeOHLCDailyデータを表示"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_cvx_stake_ohlc_daily_data(limit=limit, type_name=type_name)
+    # カラム順序を整理してから表示
+    if not df.empty:
+        df = viewer.organize_cvx_stake_ohlc_daily_columns(df)
+        print(f"📋 CvxStakeOHLCDailyカラム順序: {list(df.columns)}")
+    viewer.display_data_preview(df, "CvxStakeOHLCDailyデータ", max_rows=limit)
 
 def show_pool_meta_data(limit=100):
     """PoolMetaデータを表示"""
@@ -2375,7 +2651,9 @@ def analyze_table_fields():
         ('PriceHistory', lambda limit: viewer.get_price_history_data(limit=limit), viewer.organize_price_history_columns),
         ('ConvexPoolMetrics', lambda limit: viewer.get_pools_data(limit=limit), viewer.organize_pool_metrics_columns),
         ('CvxStakeMetrics', lambda limit: viewer.get_cvx_data(limit=limit), viewer.organize_cvx_columns),
-        ('CvxCrvStakeMetrics', lambda limit: viewer.get_cvxcrv_data(limit=limit), viewer.organize_cvxcrv_columns)
+        ('CvxCrvStakeMetrics', lambda limit: viewer.get_cvxcrv_data(limit=limit), viewer.organize_cvxcrv_columns),
+        ('CvxStakeHistory', lambda limit: viewer.get_cvx_stake_history_data(limit=limit), viewer.organize_cvx_stake_history_columns),
+        ('CvxStakeOHLCDaily', lambda limit: viewer.get_cvx_stake_ohlc_daily_data(limit=limit), viewer.organize_cvx_stake_ohlc_daily_columns)
     ]
     
     for table_name, get_func, organize_func in tables_to_analyze:
@@ -2557,6 +2835,8 @@ print("   - export_token_price_history_data(7)  # TokenPriceHistoryデータの�
 print("   - export_token_ohlc_daily_data(7)    # TokenOHLCDailyデータのみエクスポート")
 print("   - export_usdjpy_history_data(7)     # USDJPYHistoryデータのみエクスポート")
 print("   - export_usdjpy_ohlc_daily_data(7)   # USDJPYOHLCDailyデータのみエクスポート")
+print("   - export_cvx_stake_history_data(7)   # CvxStakeHistoryデータのみエクスポート")
+print("   - export_cvx_stake_ohlc_daily_data(7)   # CvxStakeOHLCDailyデータのみエクスポート")
 print("   - export_pool_meta_data()             # PoolMetaデータのみエクスポート")
 print("   - export_vault_meta_data()            # VaultMetaデータのみエクスポート")
 print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
@@ -2568,6 +2848,8 @@ print("   - show_token_price_history_data(20, 'CVX') # TokenPriceHistoryデー�
 print("   - show_token_ohlc_daily_data(20, 'CVX')    # TokenOHLCDailyデータを表示（トークン指定可能）")
 print("   - show_usdjpy_history_data(20)            # USDJPYHistoryデータを表示")
 print("   - show_usdjpy_ohlc_daily_data(20)         # USDJPYOHLCDailyデータを表示")
+print("   - show_cvx_stake_history_data(20)         # CvxStakeHistoryデータを表示")
+print("   - show_cvx_stake_ohlc_daily_data(20, 'vapr')  # CvxStakeOHLCDailyデータを表示（type指定可能）")
 print("   - show_pool_meta_data(100)            # PoolMetaデータを表示")
 print("   - show_vault_meta_data(20)            # VaultMetaデータを表示")
 print("   - show_convex_pool_metrics_data(100)  # ConvexPoolMetricsデータを表示")

@@ -140,7 +140,9 @@ class DynamoDBCleanupTool:
             'USDJPYOHLCDaily',
             'PoolLatest',
             'PoolMeta',
-            'VaultMeta'
+            'VaultMeta',
+            'CvxStakeHistory',
+            'CvxStakeOHLCDaily'
         ]
 
         total_items = 0
@@ -163,7 +165,7 @@ class DynamoDBCleanupTool:
                     count += response['Count']
 
                 # 最新データ取得
-                if table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily']:
+                if table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily', 'CvxStakeOHLCDaily']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -198,9 +200,12 @@ class DynamoDBCleanupTool:
                     else:
                         latest_info = "データなし"
 
-                elif table_name in ['CvxStakeMetrics', 'CvxCrvStakeMetrics']:
+                elif table_name in ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'CvxStakeHistory']:
                     # 特定のパーティションキーで最新データを取得
                     if table_name == 'CvxStakeMetrics':
+                        partition_key = 'token'
+                        partition_value = 'CVX'
+                    elif table_name == 'CvxStakeHistory':
                         partition_key = 'token'
                         partition_value = 'CVX'
                     else:  # CvxCrvStakeMetrics
@@ -338,6 +343,18 @@ class DynamoDBCleanupTool:
                 'partition_key': 'pool_id',
                 'partition_value': None,
                 'sort_key': None
+            },
+            {
+                'name': 'CvxStakeHistory',
+                'partition_key': 'token',
+                'partition_value': 'CVX',
+                'sort_key': 'timestamp'
+            },
+            {
+                'name': 'CvxStakeOHLCDaily',
+                'partition_key': 'type',
+                'partition_value': None,
+                'sort_key': 'timestamp'
             }
         ]
 
@@ -626,6 +643,18 @@ class DynamoDBCleanupTool:
                 'partition_key': 'pool_id',
                 'partition_value': None,
                 'sort_key': None
+            },
+            {
+                'name': 'CvxStakeHistory',
+                'partition_key': 'token',
+                'partition_value': 'CVX',
+                'sort_key': 'timestamp'
+            },
+            {
+                'name': 'CvxStakeOHLCDaily',
+                'partition_key': 'type',
+                'partition_value': None,
+                'sort_key': 'timestamp'
             }
         ]
 
@@ -1030,7 +1059,9 @@ class DynamoDBCleanupTool:
             'TokenOHLCDaily',
             'USDJPYHistory',
             'USDJPYOHLCDaily',
-            'PoolLatest'
+            'PoolLatest',
+            'CvxStakeHistory',
+            'CvxStakeOHLCDaily'
         ]
 
         total_deleted = 0
@@ -1072,6 +1103,16 @@ class DynamoDBCleanupTool:
                                 elif table_name == 'CvxCrvStakeMetrics':
                                     key = {
                                         'stake': item['stake'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'CvxStakeHistory':
+                                    key = {
+                                        'token': item['token'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'CvxStakeOHLCDaily':
+                                    key = {
+                                        'type': item['type'],
                                         'timestamp': item['timestamp']
                                     }
                                 elif table_name == 'ConvexPoolMetrics':
@@ -2161,7 +2202,9 @@ class DynamoDBCleanupTool:
             'USDJPYOHLCDaily',
             'PoolLatest',
             'PoolMeta',
-            'VaultMeta'
+            'VaultMeta',
+            'CvxStakeHistory',
+            'CvxStakeOHLCDaily'
         ]
 
         for i, table_name in enumerate(tables, 1):
@@ -2181,9 +2224,12 @@ class DynamoDBCleanupTool:
                     count += response['Count']
 
                 # 最新データ情報を取得
-                if table_name in ['CvxStakeMetrics', 'CvxCrvStakeMetrics']:
+                if table_name in ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'CvxStakeHistory']:
                     # 特定のパーティションキーで最新データを取得
                     if table_name == 'CvxStakeMetrics':
+                        partition_key = 'token'
+                        partition_value = 'CVX'
+                    elif table_name == 'CvxStakeHistory':
                         partition_key = 'token'
                         partition_value = 'CVX'
                     else:  # CvxCrvStakeMetrics
@@ -2202,7 +2248,7 @@ class DynamoDBCleanupTool:
                     else:
                         latest_info = "データなし"
 
-                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily']:
+                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily', 'CvxStakeOHLCDaily']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -2355,6 +2401,16 @@ class DynamoDBCleanupTool:
                             elif table_name == 'CvxCrvStakeMetrics':
                                 key = {
                                     'stake': item['stake'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'CvxStakeHistory':
+                                key = {
+                                    'token': item['token'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'CvxStakeOHLCDaily':
+                                key = {
+                                    'type': item['type'],
                                     'timestamp': item['timestamp']
                                 }
                             elif table_name == 'ConvexPoolMetrics':
@@ -2539,7 +2595,7 @@ class DynamoDBCleanupTool:
         print("📊 クリーンアップ前後のデータ件数比較チャート作成中...")
 
         # クリーンアップ前のデータ件数
-        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'PoolLatest', 'PoolMeta', 'VaultMeta']
+        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'PoolLatest', 'PoolMeta', 'VaultMeta', 'CvxStakeHistory', 'CvxStakeOHLCDaily']
         before_counts = []
         after_counts = []
 
