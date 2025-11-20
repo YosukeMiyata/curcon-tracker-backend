@@ -27,6 +27,7 @@ show_help() {
     echo "  -h, --help     このヘルプを表示"
     echo "  -s, --start    サービスを開始"
     echo "  -t, --test     テスト実行（1回だけ実行）"
+    echo "  -i, --init     初回セットアップ（ConvexPoolOHLCDailyからトークン抽出）"
     echo "  -m, --monitor  サービス状態を監視"
     echo "  -l, --logs     ログを表示"
     echo "  -u, --update   コードを更新してサービスを再起動"
@@ -136,6 +137,25 @@ run_test() {
     fi
 }
 
+# 初回セットアップ（ConvexPoolOHLCDailyからトークン抽出）
+run_init() {
+    log_info "初回セットアップ実行中..."
+    
+    # 実行権限を付与
+    chmod +x token_price_tracker.py
+    
+    # 初回セットアップ実行
+    python3 token_price_tracker.py --init
+    
+    if [ $? -eq 0 ]; then
+        log_info "✅ 初回セットアップ成功"
+        log_info "追跡対象トークンリストが作成されました: tracked_tokens.json"
+    else
+        log_error "❌ 初回セットアップ失敗"
+        exit 1
+    fi
+}
+
 # サービス状態を監視
 monitor_service() {
     log_info "サービス状態を監視中..."
@@ -168,6 +188,9 @@ show_logs() {
 update_and_restart() {
     log_info "コードを更新してサービスを再起動中..."
     
+    # systemdサービスファイルを更新
+    setup_systemd_service
+    
     # タイマーを停止
     sudo systemctl stop token_price_tracker.timer
     
@@ -177,7 +200,11 @@ update_and_restart() {
     # タイマーを再開
     sudo systemctl start token_price_tracker.timer
     
+    # タイマー状態を確認
+    sudo systemctl status token_price_tracker.timer --no-pager
+    
     log_info "✅ 更新・再起動完了"
+    log_info "次回実行予定: $(sudo systemctl list-timers token_price_tracker.timer --no-pager | grep token_price_tracker.timer | awk '{print $1, $2, $3, $4}')"
 }
 
 # メイン処理
@@ -198,6 +225,11 @@ main() {
             check_environment
             install_dependencies
             run_test
+            ;;
+        -i|--init)
+            check_environment
+            install_dependencies
+            run_init
             ;;
         -m|--monitor)
             monitor_service

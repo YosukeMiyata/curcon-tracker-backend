@@ -1,13 +1,38 @@
 # トークン価格追跡システム
 
-ConvexPoolMetricsテーブルからプール構成トークンを抽出し、Curve Finance APIから価格データを取得してTokenPriceHistoryテーブルに保存するシステムです。
+ConvexPoolHistoryテーブルからプール構成トークンを抽出し、Curve Finance APIから価格データを取得してTokenPriceHistoryテーブルに保存するシステムです。
 
 ## 概要
 
 - **目的**: プールやボルトの詳細表示に必要なトークン価格の推移データを提供
-- **実行頻度**: 1時間おき（日本時間17時から開始）
+- **実行頻度**: 1時間おき（日本時間の毎時00分）
 - **データソース**: Curve Finance API (https://api.curve.finance/api/getPools/all/ethereum)
 - **保存先**: TokenPriceHistoryテーブル
+- **追跡対象トークン管理**: ファイルA（tracked_tokens.json）に保存
+
+## 処理の流れ
+
+### 初回セットアップ（手動実行）
+
+1. **ConvexPoolOHLCDailyからトークン抽出**
+   - ConvexPoolOHLCDailyテーブルから全プールデータを取得
+   - プール名からトークンを抽出
+   - ファイルA（tracked_tokens.json）に保存
+
+### 定期実行（毎時00分）
+
+1. **ConvexPoolHistoryからトークン抽出**
+   - ConvexPoolHistoryテーブルから全プールデータを取得
+   - プール名からトークンを抽出
+
+2. **ファイルAの更新**
+   - ファイルAから既存のトークンを読み込み
+   - 新規トークンがあればファイルAに追加保存
+
+3. **価格取得・保存**
+   - ファイルAに含まれる全トークンについて、Curve Finance APIから価格を取得
+   - TokenPriceHistoryテーブルに保存
+   - 価格取得に失敗したトークンをJSONファイルに保存
 
 ## ファイル構成
 
@@ -26,6 +51,18 @@ ConvexPoolMetricsテーブルからプール構成トークンを抽出し、Cur
 
 ## データベーステーブル
 
+### ConvexPoolOHLCDaily
+- **用途**: 初回セットアップ時にトークンを抽出
+- **パーティションキー**: pool_id_type (String)
+- **ソートキー**: timestamp (String)
+- **主要属性**: Pool, pool_id, factory_id, type
+
+### ConvexPoolHistory
+- **用途**: 定期実行時にトークンを抽出
+- **パーティションキー**: pool_id (String)
+- **ソートキー**: timestamp (String)
+- **主要属性**: Pool, pool_id, factory_id
+
 ### TokenPriceHistory
 - **パーティションキー**: token (String)
 - **ソートキー**: timestamp (String) - 日本時間
@@ -33,24 +70,48 @@ ConvexPoolMetricsテーブルからプール構成トークンを抽出し、Cur
   - timezone: JST
   - created_at: 日本時間
   - data_source: curve_finance_api
-  - pool_count: 使用プール数
-  - pools: 使用プール（カンマ区切り）
-  - factory_ids: 使用factory_id（カンマ区切り）
   - price: $0.335340（$マーク付き）
   - price_numeric: 0.335340（数値のみ）
+  - pool_count: 使用プール数（オプション）
+  - pools: 使用プール（カンマ区切り、オプション）
+  - factory_ids: 使用factory_id（カンマ区切り、オプション）
+
+## ファイルA（tracked_tokens.json）
+
+追跡対象トークンのリストを保存するファイルです。
+
+- **パス**: `/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/tracked_tokens.json`
+- **形式**: JSON
+- **内容**:
+  ```json
+  {
+    "generated_at": "2025-01-20T10:00:00+09:00",
+    "tokens": ["CRV", "CVX", "ETH", ...],
+    "count": 106
+  }
+  ```
 
 ## 使用方法
 
-### 1. テスト実行
+### 1. 初回セットアップ（ファイルAの初期化）
+
+```bash
+# ConvexPoolOHLCDailyからトークンを抽出してファイルAを初期化
+python3 token_price_tracker.py --init
+```
+
+このコマンドは初回のみ実行します。ConvexPoolOHLCDailyテーブルからトークンを抽出し、`tracked_tokens.json`（ファイルA）に保存します。
+
+### 2. テスト実行
 ```bash
 # ローカル環境でテスト
 python3 test_token_price_tracker.py
 
-# 本番スクリプトのテスト実行
+# 本番スクリプトのテスト実行（定期実行と同じ処理）
 python3 token_price_tracker.py
 ```
 
-### 2. EC2環境でのデプロイ
+### 3. EC2環境でのデプロイ
 ```bash
 # デプロイスクリプトのヘルプ表示
 ./deploy_token_price_tracker.sh --help
@@ -65,7 +126,7 @@ python3 token_price_tracker.py
 ./deploy_token_price_tracker.sh --update
 ```
 
-### 3. 監視・管理
+### 4. 監視・管理
 ```bash
 # 監視スクリプトのヘルプ表示
 ./monitor_token_price_tracker.sh
@@ -86,7 +147,7 @@ python3 token_price_tracker.py
 ./monitor_token_price_tracker.sh logs -f
 ```
 
-### 4. systemdサービス管理
+### 5. systemdサービス管理
 ```bash
 # サービス状態確認
 sudo systemctl status token_price_tracker.timer
@@ -115,8 +176,12 @@ sudo journalctl -u token_price_tracker.service -f
 - **ログファイル**: `/var/log/token_price_tracker.log`
 - **systemdログ**: `journalctl -u token_price_tracker.service`
 
+### ファイルA（追跡対象トークン）
+- **ファイル**: `/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/tracked_tokens.json`
+- **内容**: 追跡対象トークンの一覧
+
 ### 失敗トークン記録
-- **ファイル**: `/var/log/failed_tokens_YYYYMMDD_HHMMSS.json`
+- **ファイル**: `/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/failed_tokens_YYYYMMDD_HHMMSS.json`
 - **内容**: 価格取得に失敗したトークンの一覧
 
 ## 対応トークン
@@ -163,10 +228,13 @@ sudo journalctl -u token_price_tracker.service -f
 ## 開発・カスタマイズ
 
 ### 新しいトークン対応
-`extract_tokens_from_pool_name`メソッドに特殊ケースを追加してください。
+`extract_tokens_from_pool_name`メソッドに特殊ケースを追加してください。新しいプールがConvexPoolHistoryに追加されると、自動的にファイルAに追加されます。
 
 ### 価格データソース追加
 `fetch_curve_prices`メソッドを拡張して、他のAPIからも価格データを取得できます。
 
 ### 実行頻度変更
 `token_price_tracker.timer`ファイルの`OnCalendar`設定を変更してください。
+
+### ファイルAの手動更新
+ファイルAを手動で編集することも可能です。JSON形式で保存されているため、直接編集してトークンを追加・削除できます。

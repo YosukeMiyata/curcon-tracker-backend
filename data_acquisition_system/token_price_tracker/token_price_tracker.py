@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # =====================================
 # トークン価格追跡システム
-# ConvexPoolMetricsからトークンを抽出し、Curve Finance APIから価格を取得してTokenPriceHistoryテーブルに保存
+# ConvexPoolHistoryからトークンを抽出し、Curve Finance APIから価格を取得してTokenPriceHistoryテーブルに保存
+# 追跡対象トークンリスト（tracked_tokens.json）に追跡対象トークンを保存
 # =====================================
 
 import boto3
@@ -30,13 +31,17 @@ class TokenPriceTracker:
     def __init__(self):
         """トークン価格追跡システムの初期化"""
         self.dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
-        self.convex_table = None
+        self.convex_pool_history_table = None
+        self.convex_pool_ohlc_daily_table = None
         self.token_price_table = None
         self.curve_token_prices = {}
         self.failed_tokens = []
         
         # 日本時間の設定
         self.JST = timezone(timedelta(hours=9))
+        
+        # 追跡対象トークンリストファイルのパス
+        self.tracked_tokens_file = '/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/tracked_tokens.json'
         
         # ログ設定
         self.setup_logging()
@@ -75,9 +80,15 @@ class TokenPriceTracker:
     def setup_tables(self):
         """DynamoDBテーブルに接続"""
         try:
-            self.convex_table = self.dynamodb.Table('ConvexPoolMetrics')
-            self.convex_table.load()
-            self.logger.info("✅ ConvexPoolMetricsテーブルに接続しました")
+            # ConvexPoolHistoryテーブルに接続
+            self.convex_pool_history_table = self.dynamodb.Table('ConvexPoolHistory')
+            self.convex_pool_history_table.load()
+            self.logger.info("✅ ConvexPoolHistoryテーブルに接続しました")
+            
+            # ConvexPoolOHLCDailyテーブルに接続
+            self.convex_pool_ohlc_daily_table = self.dynamodb.Table('ConvexPoolOHLCDaily')
+            self.convex_pool_ohlc_daily_table.load()
+            self.logger.info("✅ ConvexPoolOHLCDailyテーブルに接続しました")
             
             # TokenPriceHistoryテーブルが存在しない場合は作成
             try:
@@ -195,16 +206,35 @@ class TokenPriceTracker:
                     error=e
                 )
     
-    def get_all_pool_data(self):
-        """ConvexPoolMetricsから全プールデータを取得"""
+    def get_all_pool_data_from_ohlc_daily(self):
+        """ConvexPoolOHLCDailyから全プールデータを取得"""
         try:
-            self.logger.info("📊 ConvexPoolMetricsからデータを取得中...")
-            response = self.convex_table.scan()
+            self.logger.info("📊 ConvexPoolOHLCDailyからデータを取得中...")
+            response = self.convex_pool_ohlc_daily_table.scan()
             items = response.get('Items', [])
             
             # ページネーション対応
             while 'LastEvaluatedKey' in response:
-                response = self.convex_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                response = self.convex_pool_ohlc_daily_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                items.extend(response.get('Items', []))
+            
+            self.logger.info(f"✅ {len(items)}件のデータを取得しました")
+            return items
+            
+        except Exception as e:
+            self.logger.error(f"❌ データ取得エラー: {e}")
+            return []
+    
+    def get_all_pool_data_from_history(self):
+        """ConvexPoolHistoryから全プールデータを取得"""
+        try:
+            self.logger.info("📊 ConvexPoolHistoryからデータを取得中...")
+            response = self.convex_pool_history_table.scan()
+            items = response.get('Items', [])
+            
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = self.convex_pool_history_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
                 items.extend(response.get('Items', []))
             
             self.logger.info(f"✅ {len(items)}件のデータを取得しました")
@@ -264,16 +294,9 @@ class TokenPriceTracker:
         
         return tokens
     
-    def analyze_pool_tokens(self):
-        """プール構成トークンを分析"""
-        items = self.get_all_pool_data()
-        if not items:
-            return {}
-        
-        # トークン情報を格納する辞書
+    def extract_tokens_from_items(self, items):
+        """プールデータからトークンを抽出して詳細情報を含む辞書を返す"""
         token_info = {}
-        
-        self.logger.info("🔍 プールデータからトークンを抽出中...")
         
         for item in items:
             pool_name = item.get('Pool', '')
@@ -302,6 +325,229 @@ class TokenPriceTracker:
                     token_info[token]['pools'].append(pool_name)
                     if factory_id and factory_id not in token_info[token]['factory_ids']:
                         token_info[token]['factory_ids'].append(factory_id)
+        
+        return token_info
+    
+    def load_tracked_tokens(self):
+        """追跡対象トークンリストファイルから読み込む（詳細情報形式）"""
+        try:
+            if os.path.exists(self.tracked_tokens_file):
+                with open(self.tracked_tokens_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                    # 旧形式（トークン名のリストのみ）との互換性
+                    if 'tokens' in data and isinstance(data['tokens'], list) and len(data['tokens']) > 0 and isinstance(data['tokens'][0], str):
+                        # 旧形式: トークン名のリスト
+                        tokens_set = set(data.get('tokens', []))
+                        self.logger.info(f"✅ 追跡対象トークンリストから {len(tokens_set)}個のトークンを読み込みました（旧形式）")
+                        return tokens_set
+                    elif 'tokens' in data and isinstance(data['tokens'], dict):
+                        # 新形式: 詳細情報を含む辞書
+                        token_info = data['tokens']
+                        self.logger.info(f"✅ 追跡対象トークンリストから {len(token_info)}個のトークンを読み込みました（詳細情報形式）")
+                        return token_info
+                    else:
+                        self.logger.warning("⚠️ 追跡対象トークンリストの形式が不明です。新規作成します。")
+                        return {}
+            else:
+                self.logger.info("📝 追跡対象トークンリストファイルが存在しません。新規作成します。")
+                return {}
+        except Exception as e:
+            self.logger.error(f"❌ 追跡対象トークンリスト読み込みエラー: {e}")
+            return {}
+    
+    def save_tracked_tokens(self, token_data):
+        """追跡対象トークンリストファイルに保存（詳細情報形式）"""
+        try:
+            # token_dataがセットの場合は辞書に変換（旧形式との互換性）
+            if isinstance(token_data, set):
+                token_info = {}
+                for token in token_data:
+                    price = self.curve_token_prices.get(token)
+                    token_info[token] = {
+                        'symbol': token,
+                        'pool_count': 0,
+                        'pools': [],
+                        'factory_ids': [],
+                        'price': price
+                    }
+                token_data = token_info
+            
+            # 保存用データ構造
+            save_data = {
+                'generated_at': datetime.now(self.JST).isoformat(),
+                'total_tokens': len(token_data),
+                'tokens': {}
+            }
+            
+            # トークン名でソート
+            for token, info in sorted(token_data.items()):
+                save_data['tokens'][token] = {
+                    'symbol': info.get('symbol', token),
+                    'pool_count': len(info.get('pools', [])),
+                    'pools': info.get('pools', []),
+                    'factory_ids': info.get('factory_ids', []),
+                    'price': info.get('price')
+                }
+            
+            # ディレクトリが存在しない場合は作成
+            os.makedirs(os.path.dirname(self.tracked_tokens_file), exist_ok=True)
+            
+            with open(self.tracked_tokens_file, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"✅ 追跡対象トークンリストに {len(token_data)}個のトークンを保存しました: {self.tracked_tokens_file}")
+            return True
+        except Exception as e:
+            error_msg = f"❌ 追跡対象トークンリスト保存エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
+            return False
+    
+    def initialize_tracked_tokens_from_ohlc_daily(self):
+        """ConvexPoolOHLCDailyからトークンを抽出して追跡対象トークンリストに保存（初回処理）"""
+        try:
+            self.logger.info("🚀 ConvexPoolOHLCDailyからトークン抽出開始")
+            
+            # ConvexPoolOHLCDailyからデータを取得
+            items = self.get_all_pool_data_from_ohlc_daily()
+            if not items:
+                self.logger.warning("⚠️ ConvexPoolOHLCDailyにデータがありません")
+                return False
+            
+            # トークンを抽出（詳細情報を含む辞書を返す）
+            token_info = self.extract_tokens_from_items(items)
+            
+            if not token_info:
+                self.logger.warning("⚠️ トークンが抽出できませんでした")
+                return False
+            
+            # 追跡対象トークンリストに保存
+            if self.save_tracked_tokens(token_info):
+                self.logger.info(f"✅ {len(token_info)}個のトークンを追跡対象トークンリストに保存しました")
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            error_msg = f"❌ トークン抽出エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
+            return False
+    
+    def update_tracked_tokens_from_history(self):
+        """ConvexPoolHistoryからトークンを抽出し、追跡対象トークンリストを更新"""
+        try:
+            self.logger.info("🔄 ConvexPoolHistoryからトークン抽出開始")
+            
+            # 追跡対象トークンリストから既存のトークンを読み込む
+            existing_token_info = self.load_tracked_tokens()
+            
+            # 旧形式（セット）の場合は辞書に変換
+            if isinstance(existing_token_info, set):
+                existing_token_info = {token: {'symbol': token, 'pools': [], 'factory_ids': [], 'price': self.curve_token_prices.get(token)} for token in existing_token_info}
+            
+            # ConvexPoolHistoryからデータを取得
+            items = self.get_all_pool_data_from_history()
+            if not items:
+                self.logger.warning("⚠️ ConvexPoolHistoryにデータがありません")
+                return existing_token_info
+            
+            # トークンを抽出（詳細情報を含む辞書を返す）
+            new_token_info = self.extract_tokens_from_items(items)
+            
+            # 既存のトークン情報とマージ
+            all_token_info = existing_token_info.copy()
+            
+            # 新規トークンと既存トークンの情報を更新
+            added_tokens = []
+            for token, info in new_token_info.items():
+                if token not in all_token_info:
+                    # 新規トークン
+                    all_token_info[token] = info
+                    added_tokens.append(token)
+                else:
+                    # 既存トークン: プールとfactory_idをマージ
+                    existing_pools = set(all_token_info[token].get('pools', []))
+                    existing_factory_ids = set(all_token_info[token].get('factory_ids', []))
+                    
+                    # 新しいプールとfactory_idを追加
+                    for pool in info.get('pools', []):
+                        if pool not in existing_pools:
+                            all_token_info[token]['pools'].append(pool)
+                    for factory_id in info.get('factory_ids', []):
+                        if factory_id and factory_id not in existing_factory_ids:
+                            all_token_info[token]['factory_ids'].append(factory_id)
+                    
+                    # 価格を更新（新しい価格がある場合）
+                    if info.get('price') is not None:
+                        all_token_info[token]['price'] = info.get('price')
+            
+            # 新規トークンがある場合、または既存トークンの情報が更新された場合は保存
+            if added_tokens:
+                self.logger.info(f"✅ {len(added_tokens)}個の新規トークンを検出: {', '.join(sorted(added_tokens))}")
+                # 追跡対象トークンリストを更新
+                if self.save_tracked_tokens(all_token_info):
+                    self.logger.info(f"✅ 追跡対象トークンリストを更新しました（総数: {len(all_token_info)}個）")
+                else:
+                    self.logger.warning("⚠️ 追跡対象トークンリストの更新に失敗しました")
+            else:
+                self.logger.info("ℹ️ 新規トークンはありませんでした")
+                # 既存トークンの情報（プール、factory_id）が更新されている可能性があるため、保存
+                if self.save_tracked_tokens(all_token_info):
+                    self.logger.info(f"✅ 追跡対象トークンリストを更新しました（既存情報の更新、総数: {len(all_token_info)}個）")
+            
+            return all_token_info
+                
+        except Exception as e:
+            error_msg = f"❌ トークン更新エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
+            return {}
+    
+    def analyze_tracked_tokens(self, tracked_token_data):
+        """追跡対象トークンから価格情報を取得"""
+        if not tracked_token_data:
+            return {}
+        
+        # tracked_token_dataがセットの場合は辞書に変換（旧形式との互換性）
+        if isinstance(tracked_token_data, set):
+            token_info = {}
+            for token in tracked_token_data:
+                price = self.curve_token_prices.get(token)
+                token_info[token] = {
+                    'symbol': token,
+                    'pools': [],
+                    'factory_ids': [],
+                    'price': price
+                }
+            return token_info
+        
+        # 既に詳細情報形式の場合は、価格を更新
+        token_info = tracked_token_data.copy()
+        
+        self.logger.info(f"🔍 {len(token_info)}個の追跡対象トークンを処理中...")
+        
+        for token, info in token_info.items():
+            # トークン価格を更新（Curve Finance APIから最新の価格を取得）
+            price = self.curve_token_prices.get(token)
+            if price is not None:
+                info['price'] = price
         
         return token_info
     
@@ -334,12 +580,17 @@ class TokenPriceTracker:
                     'timezone': 'JST',
                     'created_at': jst_created_at,
                     'data_source': 'curve_finance_api',
-                    'pool_count': int(len(info['pools'])),  # 整数に変換
-                    'pools': ', '.join(info['pools']),
-                    'factory_ids': ', '.join(info['factory_ids']) if info['factory_ids'] else '',
                     'price': f"${price:.6f}",  # $マーク付きの価格
                     'price_numeric': Decimal(str(price))
                 }
+                
+                # poolsとfactory_idsが存在する場合のみ追加
+                if info.get('pools') and len(info['pools']) > 0:
+                    item['pool_count'] = int(len(info['pools']))
+                    item['pools'] = ', '.join(info['pools'])
+                
+                if info.get('factory_ids') and len(info['factory_ids']) > 0:
+                    item['factory_ids'] = ', '.join(info['factory_ids'])
                 
                 # priceフィールドが空でないことを確認
                 if not item['price'] or item['price'] == '':
@@ -356,7 +607,8 @@ class TokenPriceTracker:
                 self.token_price_table.put_item(Item=item)
                 saved_count += 1
                 
-                self.logger.info(f"✅ {token}価格保存: ${price:.6f} (プール数: {len(info['pools'])})")
+                pool_count_str = f" (プール数: {len(info['pools'])})" if info.get('pools') and len(info['pools']) > 0 else ""
+                self.logger.info(f"✅ {token}価格保存: ${price:.6f}{pool_count_str}")
                 
             except Exception as e:
                 error_msg = f"❌ {token}保存エラー: {e}"
@@ -396,16 +648,16 @@ class TokenPriceTracker:
                 )
     
     def run_tracking(self):
-        """価格追跡を実行"""
+        """価格追跡を実行（定期実行用）"""
         self.logger.info("🚀 トークン価格追跡開始")
         self.logger.info("=" * 50)
         
         try:
-            # トークン情報を取得
-            token_info = self.analyze_pool_tokens()
+            # 1. ConvexPoolHistoryからトークンを抽出し、ファイルAを更新
+            tracked_tokens = self.update_tracked_tokens_from_history()
             
-            if not token_info:
-                error_msg = "❌ 分析に失敗しました"
+            if not tracked_tokens:
+                error_msg = "❌ 追跡対象トークンが取得できませんでした"
                 self.logger.error(error_msg)
                 if self.slack_notifier:
                     self.slack_notifier.notify_error(
@@ -414,13 +666,26 @@ class TokenPriceTracker:
                     )
                 return False
             
-            # 価格データをDBに保存
+            # 2. 追跡対象トークンから価格情報を取得
+            token_info = self.analyze_tracked_tokens(tracked_tokens)
+            
+            if not token_info:
+                error_msg = "❌ トークン情報の分析に失敗しました"
+                self.logger.error(error_msg)
+                if self.slack_notifier:
+                    self.slack_notifier.notify_error(
+                        message=error_msg,
+                        system_name="Token Price Tracker"
+                    )
+                return False
+            
+            # 3. 価格データをDBに保存
             self.save_token_prices_to_db(token_info)
             
-            # 失敗したトークンをファイルに保存
+            # 4. 失敗したトークンをファイルに保存
             self.save_failed_tokens_to_file()
             
-            # 統計情報を表示
+            # 5. 統計情報を表示
             total_tokens = len(token_info)
             successful_tokens = total_tokens - len(self.failed_tokens)
             
@@ -447,15 +712,36 @@ class TokenPriceTracker:
 
 def main():
     """メイン関数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='トークン価格追跡システム')
+    parser.add_argument('--init', action='store_true', help='ConvexPoolOHLCDailyからトークンを抽出してファイルAを初期化')
+    args = parser.parse_args()
+    
     try:
         tracker = TokenPriceTracker()
-        success = tracker.run_tracking()
         
-        if success:
-            print("✅ トークン価格追跡が正常に完了しました")
+        if args.init:
+            # 初期化モード: ConvexPoolOHLCDailyからトークンを抽出して追跡対象トークンリストに保存
+            print("🔍 トークン価格追跡システム - 初期化モード")
+            print("📊 ConvexPoolOHLCDailyからトークンを抽出して追跡対象トークンリストを初期化")
+            success = tracker.initialize_tracked_tokens_from_ohlc_daily()
+            if success:
+                print("✅ ファイルAの初期化が正常に完了しました")
+            else:
+                print("❌ ファイルAの初期化に失敗しました")
+                exit(1)
         else:
-            print("❌ トークン価格追跡に失敗しました")
-            exit(1)
+            # 通常モード: 定期実行
+            print("🔍 トークン価格追跡システム")
+            print("📊 ConvexPoolHistoryからトークンを抽出し、Curve Finance APIから価格を取得")
+            success = tracker.run_tracking()
+            
+            if success:
+                print("✅ トークン価格追跡が正常に完了しました")
+            else:
+                print("❌ トークン価格追跡に失敗しました")
+                exit(1)
             
     except Exception as e:
         error_msg = f"❌ エラー: {e}"
@@ -475,6 +761,4 @@ def main():
         exit(1)
 
 if __name__ == "__main__":
-    print("🔍 トークン価格追跡システム")
-    print("📊 ConvexPoolMetricsからトークンを抽出し、Curve Finance APIから価格を取得")
     main()
