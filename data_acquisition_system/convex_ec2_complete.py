@@ -207,7 +207,7 @@ class ConvexEC2Complete:
             self.dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
             
             # 定期実行に関係のある全テーブルに接続
-            table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory', 'USDJPYHistory', 'CvxStakeHistory', 'CvxStakeOHLCDaily', 'CvxCrvStakeHistory', 'CvxCrvStakeOHLCDaily']
+            table_names = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PoolLatest', 'PriceHistory', 'USDJPYHistory', 'CvxStakeHistory', 'CvxStakeOHLCDaily', 'CvxCrvStakeHistory', 'CvxCrvStakeOHLCDaily', 'ConvexPoolHistory', 'ConvexPoolOHLCDaily', 'ConvexPoolRemarksHistory']
             self.tables = {}
             
             for table_name in table_names:
@@ -1365,8 +1365,8 @@ class ConvexEC2Complete:
                 table.put_item(Item=item)
                 self.logger.info(f"✅ cvxCRV保存（JST）: Gov={data['cvxcrv']['max_vapr_gov']}%, Stable={data['cvxcrv']['max_vapr_stable']}%, TVL=${data['cvxcrv']['tvl']}")
 
-            # Curveプールデータを履歴テーブル（ConvexPoolMetrics）と最新テーブル（PoolLatest）両方に保存
-            if data['curve_pools'] and 'ConvexPoolMetrics' in self.tables:
+            # Curveプールデータを履歴テーブル（ConvexPoolHistory）と最新テーブル（PoolLatest）両方に保存
+            if data['curve_pools'] and 'ConvexPoolHistory' in self.tables:
                 # プールデータとボルトデータを分離
                 pool_data_list = []
                 vault_data_list = []
@@ -1391,7 +1391,7 @@ class ConvexEC2Complete:
                 if 'PoolLatest' in self.tables:
                     self.clear_pool_latest_table()
                 
-                history_table = self.tables['ConvexPoolMetrics']
+                history_table = self.tables['ConvexPoolHistory']
                 latest_success_count = 0
                 history_success_count = 0
                 
@@ -1416,50 +1416,48 @@ class ConvexEC2Complete:
                             token_symbols = pool_data.get('token_symbols', [])
                         factory_id = self.find_factory_id_for_pool(pool_name, token_symbols, data, set())
                         
-                        # 1. 履歴テーブル（ConvexPoolMetrics）に保存
+                        # veCRV_boost_numericを計算
+                        vecrv_boost_numeric = None
+                        if vecrv_boost:
+                            try:
+                                vecrv_boost_numeric = float(str(vecrv_boost).replace('x', '').strip())
+                            except:
+                                pass
+                        
+                        # 1. 履歴テーブル（ConvexPoolHistory）に保存
                         history_item = {
                             'pool_id': pool_id,
                             'timestamp': jst_iso_timestamp,  # 日本時間
+                            'timezone': 'JST',
                             'Pool': pool_name,
+                            'factory_id': str(factory_id) if factory_id else None,
                             'Current_vAPR': current_vapr,
                             'Projected_vAPR': projected_vapr,
+                            'TVL': tvl,
                             'veCRV_boost': vecrv_boost,
                             'Remarks': remarks,
-                            'TVL': tvl,
                             'current_vapr_numeric': self.convert_to_decimal(current_vapr),
                             'projected_vapr_numeric': self.convert_to_decimal(projected_vapr),
                             'tvl_numeric': self.convert_to_decimal(tvl),
-                            'created_at': jst_created_at,  # 日本時間
+                            'veCRV_boost_numeric': Decimal(str(vecrv_boost_numeric)) if vecrv_boost_numeric is not None else None,
                             'data_source': 'convex_ec2_complete',
-                            'timezone': 'JST',
-                            'factory_id': str(factory_id) if factory_id else None
+                            'datetime': jst_iso_timestamp,
+                            'created_at': jst_created_at  # 日本時間
                         }
                         
                         # NoneやNaN値を除去
-                        history_item = {k: v for k, v in history_item.items() if v is not None}
-                        
-                        # 既存データの確認（デバッグ用）
-                        try:
-                            existing_response = history_table.query(
-                                KeyConditionExpression='pool_id = :pool_id',
-                                ExpressionAttributeValues={':pool_id': pool_id},
-                                Limit=1
-                            )
-                            existing_count = len(existing_response.get('Items', []))
-                            self.logger.info(f"   - 既存データ件数: {existing_count}")
-                        except Exception as e:
-                            self.logger.warning(f"   - 既存データ確認エラー: {e}")
+                        history_item = {k: v for k, v in history_item.items() if v is not None and v != ''}
                         
                         history_table.put_item(Item=history_item)
                         history_success_count += 1
                         factory_info = f" (factory_id: {factory_id})" if factory_id else " (factory_id: None)"
-                        self.logger.info(f"✅ ConvexPoolMetrics保存成功: {pool_name} (ID: {pool_id}){factory_info}")
+                        self.logger.info(f"✅ ConvexPoolHistory保存成功: {pool_name} (ID: {pool_id}){factory_info}")
                         
                     except Exception as e:
-                        self.logger.error(f"❌ ConvexPoolMetrics保存エラー: {pool_name} -> {e}")
+                        self.logger.error(f"❌ ConvexPoolHistory保存エラー: {pool_name} -> {e}")
                         self.logger.error(f"   - エラー詳細: {str(e)}")
                         self.logger.error(f"   - pool_id: {pool_id}")
-                        self.logger.error(f"   - history_item keys: {list(history_item.keys())}")
+                        self.logger.error(traceback.format_exc())
                     
                     # 2. 最新テーブル（PoolLatest）に保存
                     if self.save_pool_to_latest(pool_data, jst_iso_timestamp, jst_created_at):
@@ -1468,7 +1466,7 @@ class ConvexEC2Complete:
                     else:
                         self.logger.warning(f"⚠️ PoolLatest保存失敗: {pool_name}")
                 
-                self.logger.info(f"✅ Curveプール {history_success_count}/{len(filtered_data)}件を履歴テーブル（ConvexPoolMetrics）に保存しました（JST）")
+                self.logger.info(f"✅ Curveプール {history_success_count}/{len(filtered_data)}件を履歴テーブル（ConvexPoolHistory）に保存しました（JST）")
                 self.logger.info(f"✅ Curveプール {latest_success_count}/{len(filtered_data)}件を最新テーブル（PoolLatest）に保存しました（JST）")
 
             return True
@@ -1724,6 +1722,365 @@ class ConvexEC2Complete:
             
         except Exception as e:
             error_msg = f"❌ CvxStakeHistoryテーブルクリアエラー: {e}"
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
+            return False
+
+    def aggregate_yesterday_convex_pool_ohlc_and_remarks(self):
+        """前日のConvexPoolHistoryデータをOHLC集約してConvexPoolOHLCDailyに保存し、RemarksをConvexPoolRemarksHistoryに保存、ConvexPoolHistoryをクリア"""
+        try:
+            self.logger.info("📊 前日のConvexPoolHistory OHLC集約とRemarks保存、クリア処理開始")
+            
+            # 前日の日付を取得
+            now_jst = datetime.now().astimezone(self.JST)
+            yesterday = now_jst - timedelta(days=1)
+            yesterday_date_str = yesterday.strftime('%Y-%m-%d')
+            yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            self.logger.info(f"📅 集約対象日: {yesterday_date_str}")
+            
+            # 1. 前日のConvexPoolHistoryデータを取得
+            if 'ConvexPoolHistory' not in self.tables:
+                self.logger.error("❌ ConvexPoolHistoryテーブルに接続できません")
+                return False
+            
+            history_table = self.tables['ConvexPoolHistory']
+            
+            # 全データをスキャン
+            all_items = []
+            response = history_table.scan()
+            all_items.extend(response['Items'])
+            
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = history_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                all_items.extend(response['Items'])
+            
+            # 前日のデータのみフィルタリング
+            yesterday_items = []
+            for item in all_items:
+                timestamp_str = item.get('timestamp', '')
+                if not timestamp_str:
+                    continue
+                
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    timestamp_jst = timestamp.astimezone(self.JST)
+                    
+                    if yesterday_start <= timestamp_jst <= yesterday_end:
+                        yesterday_items.append(item)
+                except (ValueError, TypeError):
+                    continue
+            
+            if not yesterday_items:
+                self.logger.warning(f"⚠️ {yesterday_date_str}のデータがありません。クリア処理のみ実行します。")
+                # データがなくてもクリア処理は実行
+                self.clear_convex_pool_history_table()
+                return True
+            
+            self.logger.info(f"✅ {len(yesterday_items)}件の前日データを取得しました")
+            
+            # 2. OHLCデータを集約（current_vapr, projected_vapr, tvl, veCRV_boostの4つのtype）
+            current_vapr_ohlc = self.aggregate_convex_pool_ohlc_for_type(yesterday_items, 'current_vapr', yesterday_date_str)
+            projected_vapr_ohlc = self.aggregate_convex_pool_ohlc_for_type(yesterday_items, 'projected_vapr', yesterday_date_str)
+            tvl_ohlc = self.aggregate_convex_pool_ohlc_for_type(yesterday_items, 'tvl', yesterday_date_str)
+            vecrv_boost_ohlc = self.aggregate_convex_pool_ohlc_for_type(yesterday_items, 'veCRV_boost', yesterday_date_str)
+            
+            # 3. ConvexPoolOHLCDailyテーブルに保存
+            if 'ConvexPoolOHLCDaily' not in self.tables:
+                self.logger.error("❌ ConvexPoolOHLCDailyテーブルに接続できません")
+                return False
+            
+            ohlc_table = self.tables['ConvexPoolOHLCDaily']
+            jst_created_at = datetime.now(self.JST).isoformat()
+            date_dt = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            jst_datetime = date_dt.isoformat()
+            
+            ohlc_saved_count = 0
+            
+            # 各typeのOHLCデータを保存
+            for type_name, ohlc_data in [
+                ('current_vapr', current_vapr_ohlc),
+                ('projected_vapr', projected_vapr_ohlc),
+                ('tvl', tvl_ohlc),
+                ('veCRV_boost', vecrv_boost_ohlc)
+            ]:
+                if not ohlc_data:
+                    continue
+                
+                # pool_idごとにOHLCデータを保存
+                for pool_id, ohlc in ohlc_data.items():
+                    try:
+                        # 既存データチェック
+                        partition_key = f"{pool_id}#{type_name}"
+                        response = ohlc_table.get_item(
+                            Key={
+                                'pool_id_type': partition_key,
+                                'timestamp': yesterday_date_str
+                            }
+                        )
+                        if 'Item' in response:
+                            self.logger.debug(f"⏭️  {type_name} {pool_id} {yesterday_date_str} は既に存在するためスキップ")
+                            continue
+                        
+                        # Pool名とfactory_idを取得（最初のアイテムから）
+                        pool_name = ohlc.get('Pool', '')
+                        factory_id = ohlc.get('factory_id', '')
+                        
+                        item = {
+                            'pool_id_type': partition_key,
+                            'timestamp': yesterday_date_str,
+                            'timezone': 'JST',
+                            'Pool': pool_name,
+                            'pool_id': pool_id,
+                            'factory_id': factory_id,
+                            'type': type_name,
+                            'open': Decimal(str(ohlc['open'])),
+                            'high': Decimal(str(ohlc['high'])),
+                            'low': Decimal(str(ohlc['low'])),
+                            'close': Decimal(str(ohlc['close'])),
+                            'sample_count': int(ohlc['sample_count']),
+                            'data_source': ohlc.get('data_source', 'convex_ec2_complete'),
+                            'datetime': jst_datetime,
+                            'created_at': jst_created_at
+                        }
+                        
+                        # None値を除去
+                        item = {k: v for k, v in item.items() if v is not None and v != ''}
+                        
+                        ohlc_table.put_item(Item=item)
+                        ohlc_saved_count += 1
+                        
+                    except Exception as e:
+                        self.logger.error(f"❌ {type_name} {pool_id} {yesterday_date_str} OHLC保存エラー: {e}")
+                        self.logger.error(traceback.format_exc())
+            
+            self.logger.info(f"✅ OHLCデータ保存完了: {ohlc_saved_count}件")
+            
+            # 4. Remarksが空でないデータをConvexPoolRemarksHistoryに保存（全てのデータ、元のtimestampを使用）
+            if 'ConvexPoolRemarksHistory' not in self.tables:
+                self.logger.error("❌ ConvexPoolRemarksHistoryテーブルに接続できません")
+                return False
+            
+            remarks_table = self.tables['ConvexPoolRemarksHistory']
+            remarks_saved_count = 0
+            
+            # Remarksが空でないデータをフィルタリング
+            remarks_items = []
+            for item in yesterday_items:
+                remarks = item.get('Remarks', '')
+                if remarks and str(remarks).strip():
+                    remarks_items.append(item)
+            
+            self.logger.info(f"📊 Remarksが空でないデータ: {len(remarks_items)}件")
+            
+            for item in remarks_items:
+                pool_id = item.get('pool_id', '')
+                timestamp_str = item.get('timestamp', '')
+                
+                if not pool_id or not timestamp_str:
+                    continue
+                
+                try:
+                    # 既存データチェック（元のtimestampを使用）
+                    response = remarks_table.get_item(
+                        Key={
+                            'pool_id': pool_id,
+                            'timestamp': timestamp_str  # 元のConvexPoolHistoryのtimestampを使用
+                        }
+                    )
+                    if 'Item' in response:
+                        continue
+                    
+                    # ISO形式のタイムスタンプをパースしてJSTに変換
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    timestamp_jst = timestamp.astimezone(self.JST)
+                    jst_datetime_item = timestamp_jst.isoformat()
+                    
+                    remarks_item = {
+                        'pool_id': pool_id,
+                        'timestamp': timestamp_str,  # 元のConvexPoolHistoryのtimestampを使用
+                        'timezone': 'JST',
+                        'Pool': item.get('Pool', ''),
+                        'factory_id': item.get('factory_id', ''),
+                        'Remarks': item.get('Remarks', ''),
+                        'data_source': item.get('data_source', 'convex_ec2_complete'),
+                        'datetime': jst_datetime_item,
+                        'created_at': jst_created_at
+                    }
+                    
+                    # None値を除去
+                    remarks_item = {k: v for k, v in remarks_item.items() if v is not None and v != ''}
+                    
+                    remarks_table.put_item(Item=remarks_item)
+                    remarks_saved_count += 1
+                    
+                    if remarks_saved_count % 100 == 0:
+                        self.logger.info(f"📊 Remarks保存進捗: {remarks_saved_count}件保存完了")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Remarks保存エラー (pool_id: {pool_id}, timestamp: {timestamp_str}): {e}")
+                    self.logger.error(traceback.format_exc())
+            
+            self.logger.info(f"✅ Remarksデータ保存完了: {remarks_saved_count}件")
+            
+            # 5. ConvexPoolHistoryテーブルをクリア
+            if not self.clear_convex_pool_history_table():
+                self.logger.error("❌ ConvexPoolHistoryテーブルのクリアに失敗しました")
+                return False
+            
+            self.logger.info(f"✅ 前日のOHLC集約とRemarks保存、ConvexPoolHistoryクリア処理完了: OHLC={ohlc_saved_count}件、Remarks={remarks_saved_count}件")
+            return True
+            
+        except Exception as e:
+            error_msg = f"❌ OHLC集約・Remarks保存・クリア処理エラー: {e}"
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Convex EC2 Complete",
+                    error=e
+                )
+            return False
+    
+    def aggregate_convex_pool_ohlc_for_type(self, items: List[Dict], type_name: str, date_str: str) -> Dict[str, Dict]:
+        """ConvexPoolHistoryのOHLCデータを集約（pool_idごと）"""
+        if not items:
+            return {}
+        
+        # pool_idごとにデータをグループ化
+        pool_data = defaultdict(list)
+        
+        for item in items:
+            pool_id = item.get('pool_id', '')
+            if not pool_id:
+                continue
+            
+            # typeに応じた数値フィールドを取得
+            if type_name == 'current_vapr':
+                value_numeric = item.get('current_vapr_numeric')
+            elif type_name == 'projected_vapr':
+                value_numeric = item.get('projected_vapr_numeric')
+            elif type_name == 'tvl':
+                value_numeric = item.get('tvl_numeric')
+            elif type_name == 'veCRV_boost':
+                # veCRV_boostは文字列から数値を抽出する必要がある場合がある
+                vecrv_boost_str = item.get('veCRV_boost', '')
+                if vecrv_boost_str:
+                    try:
+                        value_numeric = float(str(vecrv_boost_str).replace('x', '').strip())
+                    except (ValueError, TypeError):
+                        value_numeric = item.get('veCRV_boost_numeric')
+                else:
+                    value_numeric = item.get('veCRV_boost_numeric')
+            else:
+                continue
+            
+            if value_numeric is None:
+                continue
+            
+            try:
+                if isinstance(value_numeric, Decimal):
+                    value = float(value_numeric)
+                else:
+                    value = float(value_numeric)
+                
+                pool_data[pool_id].append({
+                    'timestamp': item.get('timestamp', ''),
+                    'value': value,
+                    'data_source': item.get('data_source', 'convex_ec2_complete'),
+                    'Pool': item.get('Pool', ''),
+                    'factory_id': item.get('factory_id', '')
+                })
+            except (ValueError, TypeError):
+                continue
+        
+        # OHLCデータを計算
+        ohlc_data = {}
+        for pool_id, values in pool_data.items():
+            if not values:
+                continue
+            
+            # タイムスタンプでソート
+            sorted_values = sorted(values, key=lambda x: x['timestamp'])
+            
+            # OHLCを計算
+            open_value = sorted_values[0]['value']
+            close_value = sorted_values[-1]['value']
+            high_value = max(v['value'] for v in sorted_values)
+            low_value = min(v['value'] for v in sorted_values)
+            sample_count = len(sorted_values)
+            data_source = sorted_values[0].get('data_source', 'convex_ec2_complete')
+            pool_name = sorted_values[0].get('Pool', '')
+            factory_id = sorted_values[0].get('factory_id', '')
+            
+            ohlc_data[pool_id] = {
+                'open': open_value,
+                'high': high_value,
+                'low': low_value,
+                'close': close_value,
+                'sample_count': sample_count,
+                'data_source': data_source,
+                'Pool': pool_name,
+                'factory_id': factory_id
+            }
+        
+        return ohlc_data
+    
+    def clear_convex_pool_history_table(self) -> bool:
+        """ConvexPoolHistoryテーブルをクリア"""
+        try:
+            if 'ConvexPoolHistory' not in self.tables:
+                self.logger.error("❌ ConvexPoolHistoryテーブルに接続できません")
+                return False
+            
+            table = self.tables['ConvexPoolHistory']
+            
+            # 全データをスキャン
+            all_items = []
+            response = table.scan()
+            all_items.extend(response['Items'])
+            
+            # ページネーション対応
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                all_items.extend(response['Items'])
+            
+            if not all_items:
+                self.logger.info("📊 ConvexPoolHistoryテーブルは既に空です")
+                return True
+            
+            # バッチ削除
+            deleted_count = 0
+            for i in range(0, len(all_items), 25):
+                batch = all_items[i:i+25]
+                
+                with table.batch_writer() as batch_writer:
+                    for item in batch:
+                        key = {
+                            'pool_id': item['pool_id'],
+                            'timestamp': item['timestamp']
+                        }
+                        batch_writer.delete_item(Key=key)
+                        deleted_count += 1
+            
+            self.logger.info(f"✅ ConvexPoolHistoryテーブルをクリアしました: {deleted_count}件削除")
+            return True
+            
+        except Exception as e:
+            error_msg = f"❌ ConvexPoolHistoryテーブルクリアエラー: {e}"
             self.logger.error(error_msg)
             self.logger.error(traceback.format_exc())
             if self.slack_notifier:
@@ -2158,6 +2515,18 @@ class ConvexEC2Complete:
                 # 実行時間になったら実行
                 if now >= next_execution_time:
                     execution_start = datetime.now()
+                    now_jst_check = datetime.now().astimezone(self.JST)
+                    
+                    # 午前0時30分の特別処理
+                    if now_jst_check.hour == 0 and now_jst_check.minute == 30:
+                        self.logger.info("🌅 午前0時30分の特別処理を実行します")
+                        # 前日データの集約、OHLC保存、Remarks保存、テーブルクリア
+                        if self.aggregate_yesterday_convex_pool_ohlc_and_remarks():
+                            self.logger.info("✅ 前日データの集約処理が完了しました")
+                        else:
+                            self.logger.error("❌ 前日データの集約処理に失敗しました")
+                    
+                    # 通常の定期実行
                     self.run_complete_job()
                     execution_duration = (datetime.now() - execution_start).total_seconds()
                     

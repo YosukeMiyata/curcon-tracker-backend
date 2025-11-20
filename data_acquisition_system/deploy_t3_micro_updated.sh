@@ -31,16 +31,29 @@ else
     exit 1
 fi
 
-# 2. 既存サービスを停止
+# 2. 現在時刻を確認して、30分台の実行を避ける
 echo ""
-echo "2. 既存サービスを停止中..."
+echo "2. 現在時刻を確認中（30分台の実行を避けるため）..."
+CURRENT_MINUTE=$(ssh -i $KEY_FILE $EC2_USER@$EC2_IP "date +%M")
+echo "   現在の分: $CURRENT_MINUTE"
+
+# 30分台（30-39分）の場合は、次の40分まで待機
+if [ "$CURRENT_MINUTE" -ge 30 ] && [ "$CURRENT_MINUTE" -lt 40 ]; then
+    WAIT_SECONDS=$(( (40 - CURRENT_MINUTE) * 60 ))
+    echo "   ⏰ 現在30分台のため、${WAIT_SECONDS}秒（${CURRENT_MINUTE}分後）待機してから再起動します"
+    sleep $WAIT_SECONDS
+fi
+
+# 3. 既存サービスを停止
+echo ""
+echo "3. 既存サービスを停止中..."
 ssh -i $KEY_FILE $EC2_USER@$EC2_IP "sudo systemctl stop convex-scraper" 2>/dev/null || {
     echo "   ⚠️ サービス停止スキップ（サービスが実行中でない可能性）"
 }
 
-# 3. 新しいコードでサービスを再起動
+# 4. 新しいコードでサービスを再起動
 echo ""
-echo "3. 新しいコードでサービスを再起動中..."
+echo "4. 新しいコードでサービスを再起動中..."
 ssh -i $KEY_FILE $EC2_USER@$EC2_IP << 'EOF'
 # サービスを再起動
 sudo systemctl start convex-scraper
@@ -57,11 +70,18 @@ fi
 # サービス状態を表示
 echo "   📊 サービス状態:"
 sudo systemctl status convex-scraper --no-pager | head -10
+
+# 次回実行時刻を確認（ログから）
+echo ""
+echo "   ⏰ 次回実行予定時刻（ログから確認）:"
+if [ -f /home/ubuntu/convex-scraper/logs/convex_complete.log ]; then
+    tail -50 /home/ubuntu/convex-scraper/logs/convex_complete.log | grep -E "次回実行|次回実行予定" | tail -1 || echo "   ログから次回実行時刻を取得できませんでした"
+fi
 EOF
 
-# 4. デプロイ後の確認
+# 5. デプロイ後の確認
 echo ""
-echo "4. デプロイ後の確認中..."
+echo "5. デプロイ後の確認中..."
 ssh -i $KEY_FILE $EC2_USER@$EC2_IP << 'EOF'
 # プロセス確認
 echo "   📊 実行中プロセス:"

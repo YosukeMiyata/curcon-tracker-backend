@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
+from collections import defaultdict
 import warnings
 import sys
 import os
@@ -144,7 +145,10 @@ class DynamoDBCleanupTool:
             'CvxStakeHistory',
             'CvxStakeOHLCDaily',
             'CvxCrvStakeHistory',
-            'CvxCrvStakeOHLCDaily'
+            'CvxCrvStakeOHLCDaily',
+            'ConvexPoolHistory',
+            'ConvexPoolOHLCDaily',
+            'ConvexPoolRemarksHistory'
         ]
 
         total_items = 0
@@ -167,7 +171,7 @@ class DynamoDBCleanupTool:
                     count += response['Count']
 
                 # 最新データ取得
-                if table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily', 'CvxStakeOHLCDaily', 'CvxCrvStakeOHLCDaily']:
+                if table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily', 'CvxStakeOHLCDaily', 'CvxCrvStakeOHLCDaily', 'ConvexPoolHistory', 'ConvexPoolOHLCDaily', 'ConvexPoolRemarksHistory']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -672,6 +676,24 @@ class DynamoDBCleanupTool:
                 'partition_key': 'type',
                 'partition_value': None,
                 'sort_key': 'timestamp'
+            },
+            {
+                'name': 'ConvexPoolHistory',
+                'partition_key': 'pool_id',
+                'partition_value': None,
+                'sort_key': 'timestamp'
+            },
+            {
+                'name': 'ConvexPoolOHLCDaily',
+                'partition_key': 'pool_id_type',
+                'partition_value': None,
+                'sort_key': 'timestamp'
+            },
+            {
+                'name': 'ConvexPoolRemarksHistory',
+                'partition_key': 'pool_id',
+                'partition_value': None,
+                'sort_key': 'timestamp'
             }
         ]
 
@@ -685,7 +707,7 @@ class DynamoDBCleanupTool:
             try:
                 table = self.dynamodb.Table(table_name)
 
-                if table_name == 'ConvexPoolMetrics':
+                if table_name in ['ConvexPoolMetrics', 'ConvexPoolHistory', 'ConvexPoolRemarksHistory']:
                     # 最新のタイムスタンプを取得
                     response = table.scan(
                         ProjectionExpression='#ts',
@@ -743,6 +765,60 @@ class DynamoDBCleanupTool:
                         if confirm:
                             print(f"   ✅ {table_name}: {deleted_count:,}件削除完了")
                         total_deleted += deleted_count
+                
+                elif table_name == 'ConvexPoolOHLCDaily':
+                    # ConvexPoolOHLCDailyはpool_id_typeがパーティションキーのため、特別な処理が必要
+                    # 各pool_id_typeごとに最新のタイムスタンプを保持
+                    if confirm:
+                        print(f"   ⚠️ {table_name}は複合キー（pool_id_type#timestamp）のため、各pool_id_typeごとに最新データを保持します")
+                    
+                    # 全データをスキャン
+                    response = table.scan()
+                    all_items = response['Items']
+                    
+                    # ページネーション対応
+                    while 'LastEvaluatedKey' in response:
+                        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                        all_items.extend(response['Items'])
+                    
+                    # pool_id_typeごとにグループ化
+                    items_by_pool_type = defaultdict(list)
+                    for item in all_items:
+                        pool_id_type = item['pool_id_type']
+                        items_by_pool_type[pool_id_type].append(item)
+                    
+                    # 各pool_id_typeごとに最新のタイムスタンプを保持
+                    old_items = []
+                    for pool_id_type, items in items_by_pool_type.items():
+                        timestamps = [item['timestamp'] for item in items]
+                        latest_timestamp = max(timestamps)
+                        old_items.extend([item for item in items if item['timestamp'] != latest_timestamp])
+                    
+                    if confirm:
+                        print(f"   📊 削除対象: {len(old_items):,}件")
+                    
+                    # バッチ削除
+                    deleted_count = 0
+                    for i in range(0, len(old_items), 25):
+                        batch = old_items[i:i+25]
+                        with table.batch_writer() as batch_writer:
+                            for item in batch:
+                                key = {
+                                    'pool_id_type': item['pool_id_type'],
+                                    'timestamp': item['timestamp']
+                                }
+                                batch_writer.delete_item(Key=key)
+                                deleted_count += 1
+                        
+                        if confirm and len(old_items) > 100 and deleted_count % 100 == 0:
+                            progress = (deleted_count / len(old_items)) * 100
+                            print(f"   🔄 進捗: {deleted_count:,}/{len(old_items):,} ({progress:.1f}%)")
+                        
+                        time.sleep(0.1)
+                    
+                    if confirm:
+                        print(f"   ✅ {table_name}: {deleted_count:,}件削除完了")
+                    total_deleted += deleted_count
 
                 elif table_name in ['PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily']:
                     # 最新のタイムスタンプを取得
@@ -1080,7 +1156,10 @@ class DynamoDBCleanupTool:
             'CvxStakeHistory',
             'CvxStakeOHLCDaily',
             'CvxCrvStakeHistory',
-            'CvxCrvStakeOHLCDaily'
+            'CvxCrvStakeOHLCDaily',
+            'ConvexPoolHistory',
+            'ConvexPoolOHLCDaily',
+            'ConvexPoolRemarksHistory'
         ]
 
         total_deleted = 0
@@ -1145,6 +1224,21 @@ class DynamoDBCleanupTool:
                                         'timestamp': item['timestamp']
                                     }
                                 elif table_name == 'ConvexPoolMetrics':
+                                    key = {
+                                        'pool_id': item['pool_id'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'ConvexPoolHistory':
+                                    key = {
+                                        'pool_id': item['pool_id'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'ConvexPoolOHLCDaily':
+                                    key = {
+                                        'pool_id_type': item['pool_id_type'],
+                                        'timestamp': item['timestamp']
+                                    }
+                                elif table_name == 'ConvexPoolRemarksHistory':
                                     key = {
                                         'pool_id': item['pool_id'],
                                         'timestamp': item['timestamp']
@@ -2282,7 +2376,7 @@ class DynamoDBCleanupTool:
                     else:
                         latest_info = "データなし"
 
-                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily', 'CvxStakeOHLCDaily', 'CvxCrvStakeOHLCDaily']:
+                elif table_name in ['ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'USDJPYHistory', 'USDJPYOHLCDaily', 'CvxStakeOHLCDaily', 'CvxCrvStakeOHLCDaily', 'ConvexPoolHistory', 'ConvexPoolOHLCDaily', 'ConvexPoolRemarksHistory']:
                     # 全データをスキャンして最新タイムスタンプを取得
                     response = table.scan(ProjectionExpression='#ts', ExpressionAttributeNames={'#ts': 'timestamp'})
                     timestamps = [item['timestamp'] for item in response['Items']]
@@ -2458,6 +2552,21 @@ class DynamoDBCleanupTool:
                                     'timestamp': item['timestamp']
                                 }
                             elif table_name == 'ConvexPoolMetrics':
+                                key = {
+                                    'pool_id': item['pool_id'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'ConvexPoolHistory':
+                                key = {
+                                    'pool_id': item['pool_id'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'ConvexPoolOHLCDaily':
+                                key = {
+                                    'pool_id_type': item['pool_id_type'],
+                                    'timestamp': item['timestamp']
+                                }
+                            elif table_name == 'ConvexPoolRemarksHistory':
                                 key = {
                                     'pool_id': item['pool_id'],
                                     'timestamp': item['timestamp']
@@ -2639,7 +2748,7 @@ class DynamoDBCleanupTool:
         print("📊 クリーンアップ前後のデータ件数比較チャート作成中...")
 
         # クリーンアップ前のデータ件数
-        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'PoolLatest', 'PoolMeta', 'VaultMeta', 'CvxStakeHistory', 'CvxStakeOHLCDaily', 'CvxCrvStakeHistory', 'CvxCrvStakeOHLCDaily']
+        tables = ['CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics', 'PriceHistory', 'TokenPriceHistory', 'TokenOHLCDaily', 'PoolLatest', 'PoolMeta', 'VaultMeta', 'CvxStakeHistory', 'CvxStakeOHLCDaily', 'CvxCrvStakeHistory', 'CvxCrvStakeOHLCDaily', 'ConvexPoolHistory', 'ConvexPoolOHLCDaily', 'ConvexPoolRemarksHistory']
         before_counts = []
         after_counts = []
 

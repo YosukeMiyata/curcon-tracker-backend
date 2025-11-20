@@ -148,6 +148,27 @@ class DynamoDBComprehensiveViewer:
                     'key_attr': 'type',
                     'key_value': None,  # gov、stablecoin、tvlの3つのtypeがあるため
                     'sort_key': 'timestamp'
+                },
+                'ConvexPoolHistory': {
+                    'name': 'Convexプール履歴データ',
+                    'description': 'Convexプールの履歴情報（全属性を含む）',
+                    'key_attr': 'pool_id',
+                    'key_value': None,  # 複数のプールがあるため
+                    'sort_key': 'timestamp'
+                },
+                'ConvexPoolOHLCDaily': {
+                    'name': 'ConvexプールOHLC日次データ',
+                    'description': 'Convexプールの日次OHLC（Open/High/Low/Close）情報',
+                    'key_attr': 'pool_id_type',
+                    'key_value': None,  # pool_id#type形式の複合キー
+                    'sort_key': 'timestamp'
+                },
+                'ConvexPoolRemarksHistory': {
+                    'name': 'ConvexプールRemarks履歴データ',
+                    'description': 'ConvexプールのRemarks（備考）履歴情報',
+                    'key_attr': 'pool_id',
+                    'key_value': None,  # 複数のプールがあるため
+                    'sort_key': 'timestamp'
                 }
             }
             self.connection_status = True
@@ -1493,6 +1514,217 @@ class DynamoDBComprehensiveViewer:
             print(f"❌ USDJPYOHLCDailyデータ取得エラー: {e}")
             return pd.DataFrame()
 
+    def get_convex_pool_history_data(self, limit=100, days=None):
+        """ConvexPoolHistoryテーブルのデータを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+        
+        try:
+            table = self.dynamodb.Table('ConvexPoolHistory')
+            
+            # ページネーション対応のスキャン処理
+            all_items = []
+            scan_params = {'Limit': min(limit, 1000)}
+            
+            print(f"🔍 ConvexPoolHistoryテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+            
+            all_items.extend(response['Items'])
+            
+            # ページネーション処理
+            while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                remaining_limit = limit - len(all_items)
+                if remaining_limit <= 0:
+                    break
+                    
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(remaining_limit, 1000)
+                
+                response = table.scan(**scan_params)
+                all_items.extend(response['Items'])
+                
+                print(f"   📊 取得中... {len(all_items)}件")
+            
+            all_items = all_items[:limit]
+            
+            if all_items:
+                print(f"   📊 ConvexPoolHistoryデータ取得: {len(all_items)}件")
+                converted_items = [convert_decimal_to_float(item) for item in all_items]
+                df = pd.DataFrame(converted_items)
+                
+                # タイムスタンプを日時型に変換
+                try:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                except Exception:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                
+                # 日付フィルタリング
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 ConvexPoolHistoryデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 ConvexPoolHistoryデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 ConvexPoolHistoryデータ取得完了: {len(df)}件")
+                
+                return df
+            else:
+                print("❌ ConvexPoolHistoryデータが見つかりません")
+                return pd.DataFrame()
+        
+        except Exception as e:
+            print(f"❌ ConvexPoolHistoryデータ取得エラー: {e}")
+            return pd.DataFrame()
+
+    def get_convex_pool_ohlc_daily_data(self, limit=1000, days=None, pool_id_type=None):
+        """ConvexPoolOHLCDailyテーブルのデータを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+        
+        try:
+            table = self.dynamodb.Table('ConvexPoolOHLCDaily')
+            
+            all_items = []
+            
+            if pool_id_type:
+                # 特定のpool_id_typeでクエリ
+                response = table.query(
+                    KeyConditionExpression=Key('pool_id_type').eq(pool_id_type),
+                    Limit=limit
+                )
+                all_items.extend(response['Items'])
+                
+                while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                    response = table.query(
+                        KeyConditionExpression=Key('pool_id_type').eq(pool_id_type),
+                        ExclusiveStartKey=response['LastEvaluatedKey'],
+                        Limit=min(limit - len(all_items), 1000)
+                    )
+                    all_items.extend(response['Items'])
+            else:
+                # 全データをスキャン
+                scan_params = {'Limit': min(limit, 1000)}
+                response = table.scan(**scan_params)
+                all_items.extend(response['Items'])
+                
+                while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                    scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                    scan_params['Limit'] = min(limit - len(all_items), 1000)
+                    response = table.scan(**scan_params)
+                    all_items.extend(response['Items'])
+                    print(f"   📊 取得中... {len(all_items)}件")
+            
+            all_items = all_items[:limit]
+            
+            if all_items:
+                print(f"   📊 ConvexPoolOHLCDailyデータ取得: {len(all_items)}件")
+                converted_items = [convert_decimal_to_float(item) for item in all_items]
+                df = pd.DataFrame(converted_items)
+                
+                # タイムスタンプを日時型に変換
+                try:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                except Exception:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                
+                # 日付フィルタリング
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 ConvexPoolOHLCDailyデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 ConvexPoolOHLCDailyデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 ConvexPoolOHLCDailyデータ取得完了: {len(df)}件")
+                
+                return df
+            else:
+                print("❌ ConvexPoolOHLCDailyデータが見つかりません")
+                return pd.DataFrame()
+        
+        except Exception as e:
+            print(f"❌ ConvexPoolOHLCDailyデータ取得エラー: {e}")
+            return pd.DataFrame()
+
+    def get_convex_pool_remarks_history_data(self, limit=100, days=None):
+        """ConvexPoolRemarksHistoryテーブルのデータを取得"""
+        if not self.connection_status:
+            return pd.DataFrame()
+        
+        try:
+            table = self.dynamodb.Table('ConvexPoolRemarksHistory')
+            
+            # ページネーション対応のスキャン処理
+            all_items = []
+            scan_params = {'Limit': min(limit, 1000)}
+            
+            print(f"🔍 ConvexPoolRemarksHistoryテーブルに接続中... (limit: {limit})")
+            response = table.scan(**scan_params)
+            
+            all_items.extend(response['Items'])
+            
+            # ページネーション処理
+            while 'LastEvaluatedKey' in response and len(all_items) < limit:
+                remaining_limit = limit - len(all_items)
+                if remaining_limit <= 0:
+                    break
+                    
+                scan_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
+                scan_params['Limit'] = min(remaining_limit, 1000)
+                
+                response = table.scan(**scan_params)
+                all_items.extend(response['Items'])
+                
+                print(f"   📊 取得中... {len(all_items)}件")
+            
+            all_items = all_items[:limit]
+            
+            if all_items:
+                print(f"   📊 ConvexPoolRemarksHistoryデータ取得: {len(all_items)}件")
+                converted_items = [convert_decimal_to_float(item) for item in all_items]
+                df = pd.DataFrame(converted_items)
+                
+                # タイムスタンプを日時型に変換
+                try:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+                    if df['datetime'].dt.tz is not None:
+                        df['datetime'] = df['datetime'].dt.tz_convert('UTC').dt.tz_localize(None)
+                except Exception:
+                    df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                
+                # 日付フィルタリング
+                if days:
+                    try:
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        cutoff_date_naive = cutoff_date.replace(tzinfo=None)
+                        df = df[df['datetime'] >= cutoff_date_naive]
+                        print(f"📊 ConvexPoolRemarksHistoryデータ取得完了: {len(df)}件 (過去{days}日分)")
+                    except Exception as e:
+                        print(f"⚠️ 日付フィルタリングでエラー: {e}")
+                        print(f"📊 ConvexPoolRemarksHistoryデータ取得完了: {len(df)}件")
+                else:
+                    print(f"📊 ConvexPoolRemarksHistoryデータ取得完了: {len(df)}件")
+                
+                return df
+            else:
+                print("❌ ConvexPoolRemarksHistoryデータが見つかりません")
+                return pd.DataFrame()
+        
+        except Exception as e:
+            print(f"❌ ConvexPoolRemarksHistoryデータ取得エラー: {e}")
+            return pd.DataFrame()
+
     def display_data_preview(self, df, title, max_rows=5):
         """データのプレビューを表示（CSV出力と同じ項目順序）"""
         if df.empty:
@@ -2273,6 +2505,75 @@ class DynamoDBComprehensiveViewer:
         
         return df[final_columns]
 
+    def organize_convex_pool_history_columns(self, df):
+        """ConvexPoolHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'Pool', 'pool_id', 'factory_id',
+            'Current_vAPR', 'Projected_vAPR', 'TVL', 'veCRV_boost', 'Remarks',
+            'current_vapr_numeric', 'projected_vapr_numeric', 'tvl_numeric',
+            'veCRV_boost_numeric', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_convex_pool_ohlc_daily_columns(self, df):
+        """ConvexPoolOHLCDailyデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'pool_id_type', 'Pool', 'pool_id',
+            'factory_id', 'type', 'open', 'high', 'low', 'close',
+            'sample_count', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
+    def organize_convex_pool_remarks_history_columns(self, df):
+        """ConvexPoolRemarksHistoryデータのカラム順序を整理"""
+        if df.empty:
+            return df
+        
+        # 指定された順序のカラムリスト
+        desired_columns = [
+            'timezone', 'timestamp', 'Pool', 'pool_id', 'factory_id',
+            'Remarks', 'data_source', 'datetime', 'created_at'
+        ]
+        
+        # 存在するカラムのみを選択
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        
+        # 存在しないカラムを最後に追加
+        missing_columns = [col for col in df.columns if col not in desired_columns]
+        
+        # 最終的なカラム順序
+        final_columns = existing_columns + missing_columns
+        
+        return df[final_columns]
+
     def export_to_csv(self, days=7):
         """データをCSVファイルにエクスポート（Google Colab自動ダウンロード対応）"""
         print(f"📁 過去{days}日間のデータをCSVエクスポート中...")
@@ -2886,6 +3187,88 @@ def export_all_convex_pool_metrics_data():
     else:
         print("❌ ConvexPoolMetricsデータが見つかりませんでした。")
 
+def export_all_convex_pool_history_data():
+    """ConvexPoolHistoryテーブルの全データをエクスポート（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_convex_pool_history_data(limit=999999)
+    
+    if not df.empty:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'convex_pool_history_all_data_{timestamp}.csv'
+        
+        # カラム順序を整理
+        df = viewer.organize_convex_pool_history_columns(df)
+        df.to_csv(filename, index=False)
+        print(f"✅ ConvexPoolHistory全データ: {filename} ({len(df)}件)")
+        print(f"📋 ConvexPoolHistoryカラム順序: {list(df.columns)}")
+        
+        try:
+            from google.colab import files
+            files.download(filename)
+            print(f"📊 ConvexPoolHistory全データのダウンロードが完了しました!")
+        except ImportError:
+            print(f"📊 ConvexPoolHistory全データが{filename}に保存されました!")
+    else:
+        print("❌ ConvexPoolHistoryデータが見つかりませんでした。")
+
+def export_all_convex_pool_ohlc_daily_data():
+    """ConvexPoolOHLCDailyテーブルの全データをエクスポート（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_convex_pool_ohlc_daily_data(limit=999999)
+    
+    if not df.empty:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'convex_pool_ohlc_daily_all_data_{timestamp}.csv'
+        
+        # カラム順序を整理
+        df = viewer.organize_convex_pool_ohlc_daily_columns(df)
+        
+        # 同じプールで同じtypeのデータが日付順で連続するようにソート（pool_id、type、timestampの順）
+        if 'pool_id' in df.columns and 'timestamp' in df.columns:
+            # typeカラムがある場合はそれも含めてソート
+            if 'type' in df.columns:
+                df = df.sort_values(by=['pool_id', 'type', 'timestamp'], ascending=[True, True, True])
+            else:
+                df = df.sort_values(by=['pool_id', 'timestamp'], ascending=[True, True])
+            print(f"📊 データをソートしました（pool_id、type、timestampの順）")
+        
+        df.to_csv(filename, index=False)
+        print(f"✅ ConvexPoolOHLCDaily全データ: {filename} ({len(df)}件)")
+        print(f"📋 ConvexPoolOHLCDailyカラム順序: {list(df.columns)}")
+        
+        try:
+            from google.colab import files
+            files.download(filename)
+            print(f"📊 ConvexPoolOHLCDaily全データのダウンロードが完了しました!")
+        except ImportError:
+            print(f"📊 ConvexPoolOHLCDaily全データが{filename}に保存されました!")
+    else:
+        print("❌ ConvexPoolOHLCDailyデータが見つかりませんでした。")
+
+def export_all_convex_pool_remarks_history_data():
+    """ConvexPoolRemarksHistoryテーブルの全データをエクスポート（制限なし）"""
+    viewer = DynamoDBComprehensiveViewer()
+    df = viewer.get_convex_pool_remarks_history_data(limit=999999)
+    
+    if not df.empty:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'convex_pool_remarks_history_all_data_{timestamp}.csv'
+        
+        # カラム順序を整理
+        df = viewer.organize_convex_pool_remarks_history_columns(df)
+        df.to_csv(filename, index=False)
+        print(f"✅ ConvexPoolRemarksHistory全データ: {filename} ({len(df)}件)")
+        print(f"📋 ConvexPoolRemarksHistoryカラム順序: {list(df.columns)}")
+        
+        try:
+            from google.colab import files
+            files.download(filename)
+            print(f"📊 ConvexPoolRemarksHistory全データのダウンロードが完了しました!")
+        except ImportError:
+            print(f"📊 ConvexPoolRemarksHistory全データが{filename}に保存されました!")
+    else:
+        print("❌ ConvexPoolRemarksHistoryデータが見つかりませんでした。")
+
 def show_convex_pool_metrics_data(limit=100):
     """ConvexPoolMetricsデータを表示"""
     viewer = DynamoDBComprehensiveViewer()
@@ -3106,6 +3489,9 @@ print("   - export_vault_meta_data()            # VaultMetaデータのみエク
 print("   - export_all_pool_meta_data()         # PoolMeta全データエクスポート（制限なし）")
 print("   - export_all_vault_meta_data()        # VaultMeta全データエクスポート（制限なし）")
 print("   - export_all_convex_pool_metrics_data() # ConvexPoolMetrics全データエクスポート（制限なし）")
+print("   - export_all_convex_pool_history_data() # ConvexPoolHistory全データエクスポート（制限なし）")
+print("   - export_all_convex_pool_ohlc_daily_data() # ConvexPoolOHLCDaily全データエクスポート（制限なし）")
+print("   - export_all_convex_pool_remarks_history_data() # ConvexPoolRemarksHistory全データエクスポート（制限なし）")
 print("   - show_pool_latest_data(20)           # PoolLatestデータを表示")
 print("   - show_price_history_data(20, 'CVX')  # PriceHistoryデータを表示（シンボル指定可能）")
 print("   - show_token_price_history_data(20, 'CVX') # TokenPriceHistoryデータを表示（シンボル指定可能）")
@@ -3150,6 +3536,9 @@ print("\n   # 全データをエクスポート（制限なし）")
 print("   export_all_pool_meta_data()")
 print("   export_all_vault_meta_data()")
 print("   export_all_convex_pool_metrics_data()")
+print("   export_all_convex_pool_history_data()")
+print("   export_all_convex_pool_ohlc_daily_data()")
+print("   export_all_convex_pool_remarks_history_data()")
 print("\n   # フィールド構造の確認")
 print("   analyze_table_fields()")
 print("   check_pool_meta_fields()")
@@ -3170,3 +3559,6 @@ print("   - pool_id/vault_idフィールドの文字列ID対応（修正済み�
 print("   - VaultMetaテーブル再作成対応（vault_idがプライマリキー）")
 print("   - ConvexPoolMetrics全データエクスポート機能（制限なし）")
 print("   - ConvexPoolMetricsデータ表示機能")
+print("   - ConvexPoolHistory全データエクスポート機能（制限なし）")
+print("   - ConvexPoolOHLCDaily全データエクスポート機能（制限なし）")
+print("   - ConvexPoolRemarksHistory全データエクスポート機能（制限なし）")
