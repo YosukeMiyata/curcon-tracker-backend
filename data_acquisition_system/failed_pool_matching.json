@@ -1,0 +1,16 @@
+{
+  "USPD​+USDC": {
+    "token_symbols": [],
+    "first_seen": "2025-12-05T02:30:44.603464",
+    "last_seen": "2025-12-05T06:30:44.609960",
+    "failure_count": 5,
+    "status": "pending"
+  },
+  "sfrxUSD​+frxUSD": {
+    "token_symbols": [],
+    "first_seen": "2025-12-05T03:30:43.426763",
+    "last_seen": "2025-12-05T03:30:43.426773",
+    "failure_count": 1,
+    "status": "pending"
+  }
+}
