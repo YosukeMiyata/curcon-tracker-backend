@@ -4,7 +4,7 @@ Curve Simulation API
 Web3.pyを使用した直接的なオンチェーンシミュレーションAPI
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, List
@@ -30,11 +30,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# FastAPIアプリ初期化
+# API認証トークン
+API_SECRET_TOKEN = os.getenv("API_SECRET_TOKEN")
+
+# 認証ミドルウェア
+async def verify_token(authorization: Optional[str] = Header(None)):
+    """
+    Bearer token認証を検証
+    API_SECRET_TOKENが設定されていない場合は認証をスキップ（開発用）
+    """
+    if not API_SECRET_TOKEN:
+        # トークンが設定されていない場合は警告を出すが通過させる
+        logger.warning("⚠️ API_SECRET_TOKEN not set - authentication disabled")
+        return True
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header missing"
+        )
+    
+    # "Bearer <token>" 形式を想定
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication scheme. Use 'Bearer <token>'"
+            )
+        if token != API_SECRET_TOKEN:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token"
+            )
+    except ValueError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header format. Use 'Bearer <token>'"
+        )
+    
+    return True
+
+# FastAPIアプリ初期化（全エンドポイントに認証を適用）
 app = FastAPI(
     title="Curve Simulation API",
     description="Web3.pyを使用した直接的なCurveシミュレーションAPI",
-    version="2.0.0"
+    version="2.0.0",
+    dependencies=[Depends(verify_token)]  # 全エンドポイントに認証を適用
 )
 
 # CORS設定
@@ -45,6 +87,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # DynamoDB接続
 try:
