@@ -6,9 +6,7 @@ After=network.target
 Type=oneshot
 User=ubuntu
 WorkingDirectory=/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker
-Environment=AWS_ACCESS_KEY_ID=AKIAZMJFRR5LBGA56R76
-Environment=AWS_SECRET_ACCESS_KEY=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
-Environment=AWS_DEFAULT_REGION=ap-northeast-1
+EnvironmentFile=/home/ubuntu/convex-scraper/.env
 ExecStart=/usr/bin/python3 /home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/token_ohlc_aggregator.py
 StandardOutput=journal
 StandardError=journal
