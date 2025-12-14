@@ -123,13 +123,24 @@ class ConvexTablesUpdater:
             # pool_nameを取得（テーブルによってキー名が異なる）
             pool_name = item.get('Pool') or item.get('pool_name')
             pool_id = item.get('pool_id')
+            pool_id_type = item.get('pool_id_type')
             
-            if not pool_name and not pool_id:
+            if not pool_name and not pool_id and not pool_id_type:
+                print(f"   ⚠️ スキップ: 識別子なし (Item: {item})")
                 skipped_count += 1
                 continue
             
             # factory_idを検索（pool_nameがあればそれを使用、なければpool_idから推測）
-            search_name = pool_name if pool_name else pool_id
+            # pool_id_typeがある場合 (例: "pool_id#type") はpool_id部分を抽出
+            if pool_name:
+                search_name = pool_name
+            elif pool_id:
+                search_name = pool_id
+            elif pool_id_type:
+                search_name = pool_id_type.split('#')[0]
+            else:
+                search_name = "unknown"
+
             factory_id = self.find_factory_id_for_pool(search_name)
             
             if factory_id:
@@ -138,6 +149,7 @@ class ConvexTablesUpdater:
                     if table_name == 'PoolLatest':
                         # PoolLatestのキー: pool_id (パーティションキー)
                         if not pool_id:
+                            print(f"   ⚠️ スキップ ({search_name}): pool_id不足")
                             skipped_count += 1
                             continue
                         table.update_item(
@@ -148,6 +160,7 @@ class ConvexTablesUpdater:
                     elif table_name == 'ConvexPoolHistory':
                         # ConvexPoolHistoryのキー: pool_id (パーティションキー), timestamp (ソートキー)
                         if not pool_id or 'timestamp' not in item:
+                            print(f"   ⚠️ スキップ ({search_name}): pool_id/timestamp不足")
                             skipped_count += 1
                             continue
                         table.update_item(
@@ -159,14 +172,15 @@ class ConvexTablesUpdater:
                             ExpressionAttributeValues={':factory_id': factory_id}
                         )
                     elif table_name == 'ConvexPoolOHLCDaily':
-                        # ConvexPoolOHLCDailyのキー: pool_id_type (パーティションキー), date (ソートキー)
-                        if 'pool_id_type' not in item or 'date' not in item:
+                        # ConvexPoolOHLCDailyのキー: pool_id_type (パーティションキー), timestamp (ソートキー)
+                        if 'pool_id_type' not in item or 'timestamp' not in item:
+                            print(f"   ⚠️ スキップ ({search_name}): pool_id_type/timestamp不足 (Keys: {list(item.keys())})")
                             skipped_count += 1
                             continue
                         table.update_item(
                             Key={
                                 'pool_id_type': item['pool_id_type'],
-                                'date': item['date']
+                                'timestamp': item['timestamp']
                             },
                             UpdateExpression='SET factory_id = :factory_id',
                             ExpressionAttributeValues={':factory_id': factory_id}
@@ -174,6 +188,7 @@ class ConvexTablesUpdater:
                     elif table_name == 'ConvexPoolRemarksHistory':
                         # ConvexPoolRemarksHistoryのキー: pool_id (パーティションキー), timestamp (ソートキー)
                         if not pool_id or 'timestamp' not in item:
+                            print(f"   ⚠️ スキップ ({search_name}): pool_id/timestamp不足")
                             skipped_count += 1
                             continue
                         table.update_item(
@@ -193,6 +208,7 @@ class ConvexTablesUpdater:
                     print(f"   ❌ 更新エラー ({search_name}): {e}")
                     error_count += 1
             else:
+                print(f"   ⚠️ スキップ: factory_id未発見 (Search: {search_name})")
                 skipped_count += 1
         
         print(f"\n   ✅ {table_name}更新完了:")

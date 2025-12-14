@@ -1,0 +1,16 @@
+{
+  "USDC​+USDU": {
+    "token_symbols": [],
+    "first_seen": "2025-12-13T10:30:53.138041",
+    "last_seen": "2025-12-14T04:30:50.877975",
+    "failure_count": 19,
+    "status": "pending"
+  },
+  "MUSD​+crv2pool": {
+    "token_symbols": [],
+    "first_seen": "2025-12-14T03:30:47.739032",
+    "last_seen": "2025-12-14T04:30:52.021966",
+    "failure_count": 4,
+    "status": "pending"
+  }
+}

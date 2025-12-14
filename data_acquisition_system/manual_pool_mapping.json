@@ -292,5 +292,7 @@
   "crvUSD​+YB": "factory-twocrypto-271",
   "frxUSD​+msUSD": "factory-stable-ng-599",
   "USPD​+USDC": "factory-stable-ng-609",
-  "sfrxUSD​+frxUSD": "factory-stable-ng-539"
+  "sfrxUSD​+frxUSD": "factory-stable-ng-539",
+  "USDC​+USDU": "factory-stable-ng-506",
+  "MUSD+crv2pool": "factory-stable-ng-518"
 }
