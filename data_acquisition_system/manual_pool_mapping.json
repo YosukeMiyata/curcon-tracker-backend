@@ -294,5 +294,8 @@
   "USPD​+USDC": "factory-stable-ng-609",
   "sfrxUSD​+frxUSD": "factory-stable-ng-539",
   "USDC​+USDU": "factory-stable-ng-506",
-  "MUSD+crv2pool": "factory-stable-ng-518"
+  "MUSD+crv2pool": "factory-stable-ng-518",
+  "crvUSD​+ZCHF": "factory-twocrypto-274",
+  "pmUSD​+frxUSD": "factory-stable-ng-653",
+  "pmUSD​+crvUSD": "factory-stable-ng-652"
 }
