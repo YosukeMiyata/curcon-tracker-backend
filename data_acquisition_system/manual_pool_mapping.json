@@ -297,5 +297,6 @@
   "MUSD+crv2pool": "factory-stable-ng-518",
   "crvUSD​+ZCHF": "factory-twocrypto-274",
   "pmUSD​+frxUSD": "factory-stable-ng-653",
-  "pmUSD​+crvUSD": "factory-stable-ng-652"
+  "pmUSD​+crvUSD": "factory-stable-ng-652",
+  "OETH​+ARM-WETH-stETH": "factory-stable-ng-641"
 }
