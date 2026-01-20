@@ -149,7 +149,7 @@ class ConvexEC2Complete:
 
     def setup_logging(self):
         """ログ設定"""
-        log_dir = Path("/home/ubuntu/convex-scraper/logs")
+        log_dir = self.base_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         
         log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
