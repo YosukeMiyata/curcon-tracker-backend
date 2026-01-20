@@ -50,14 +50,28 @@ try:
 except ImportError:
     SLACK_AVAILABLE = False
 
+# Supabase関連のインポート
+try:
+    from supabase import create_client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+
 class ConvexEC2Complete:
     def __init__(self):
         """EC2用Convex Finance完全版スクレイパー初期化"""
         # 環境変数読み込み
         load_dotenv()
         
+        # 実行環境のベースディレクトリ
+        default_base_dir = Path("/home/ubuntu/convex-scraper")
+        if os.getenv("GITHUB_ACTIONS") == "true" or not default_base_dir.exists():
+            self.base_dir = Path(__file__).resolve().parent
+        else:
+            self.base_dir = default_base_dir
+
         # ロックファイル設定
-        self.lock_file_path = Path("/home/ubuntu/convex-scraper/.convex_scraper.lock")
+        self.lock_file_path = self.base_dir / ".convex_scraper.lock"
         self.lock_file = None
         
         # 基本設定
@@ -65,8 +79,8 @@ class ConvexEC2Complete:
         self.setup_directories()
         
         # 人力対応表ファイルパス
-        self.manual_mapping_file = Path("/home/ubuntu/convex-scraper/manual_pool_mapping.json")
-        self.failed_matching_file = Path("/home/ubuntu/convex-scraper/failed_pool_matching.json")
+        self.manual_mapping_file = self.base_dir / "manual_pool_mapping.json"
+        self.failed_matching_file = self.base_dir / "failed_pool_matching.json"
         
         # 実行統計
         self.is_running = False
@@ -81,8 +95,8 @@ class ConvexEC2Complete:
         # API設定
         self.setup_api_keys()
         
-        # AWS設定
-        self.setup_aws()
+        # DB設定（Supabase優先、なければDynamoDB）
+        self.setup_database()
         
         # シグナルハンドラー設定
         self.setup_signal_handlers()
@@ -165,9 +179,8 @@ class ConvexEC2Complete:
 
     def setup_directories(self):
         """ディレクトリ設定"""
-        base_dir = Path("/home/ubuntu/convex-scraper")
-        self.logs_dir = base_dir / "logs"
-        self.data_dir = base_dir / "data"
+        self.logs_dir = self.base_dir / "logs"
+        self.data_dir = self.base_dir / "data"
         
         for dir_path in [self.logs_dir, self.data_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
@@ -189,6 +202,362 @@ class ConvexEC2Complete:
         
         if not self.coingecko_api_key:
             self.logger.warning("⚠️ COINGECKO_API_KEY環境変数が設定されていません")
+
+    def setup_database(self):
+        """DB設定（Supabase優先、なければDynamoDB）"""
+        self.db_mode = "dynamodb"
+        self.supabase = None
+        self.tables = {}
+
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        if supabase_url and supabase_key:
+            if not SUPABASE_AVAILABLE:
+                self.logger.error("❌ supabase パッケージが見つかりません")
+                return False
+            return self.setup_supabase(supabase_url, supabase_key)
+
+        return self.setup_aws()
+
+    def setup_supabase(self, supabase_url: str, supabase_key: str):
+        """Supabase接続設定"""
+        try:
+            self.supabase = create_client(supabase_url, supabase_key)
+            self.db_mode = "supabase"
+
+            table_names = [
+                'CvxStakeMetrics', 'CvxCrvStakeMetrics', 'ConvexPoolMetrics',
+                'PoolLatest', 'PriceHistory', 'USDJPYHistory', 'CvxStakeHistory',
+                'CvxStakeOHLCDaily', 'CvxCrvStakeHistory', 'CvxCrvStakeOHLCDaily',
+                'ConvexPoolHistory', 'ConvexPoolOHLCDaily', 'ConvexPoolRemarksHistory'
+            ]
+            self.tables = {name: name for name in table_names}
+
+            self.logger.info("✅ Supabase接続成功")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Supabase接続エラー: {e}")
+            return False
+
+    def _supabase_table_map(self):
+        """DynamoDB属性名 -> Supabaseカラム名のマッピング"""
+        return {
+            "USDJPYHistory": {
+                "table": "usdjpy_history",
+                "on_conflict": "asset,timestamp",
+                "columns": {
+                    "asset": "asset",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "rate": "rate",
+                    "source": "source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "PoolLatest": {
+                "table": "pool_latest",
+                "on_conflict": "pool_id",
+                "columns": {
+                    "pool_id": "pool_id",
+                    "Pool": "pool_name",
+                    "Current_vAPR": "current_vapr",
+                    "Projected_vAPR": "projected_vapr",
+                    "TVL": "tvl",
+                    "veCRV_boost": "vecrv_boost",
+                    "Remarks": "remarks",
+                    "current_vapr_numeric": "current_vapr_numeric",
+                    "projected_vapr_numeric": "projected_vapr_numeric",
+                    "tvl_numeric": "tvl_numeric",
+                    "data_source": "data_source",
+                    "is_vault": "is_vault",
+                    "updated_at": "updated_at",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "token_symbols": "token_symbols",
+                    "factory_id": "factory_id",
+                    "search_tokens": "search_tokens",
+                    "normalized_name": "normalized_name",
+                },
+            },
+            "ConvexPoolHistory": {
+                "table": "convex_pool_history",
+                "on_conflict": "pool_id,timestamp",
+                "columns": {
+                    "pool_id": "pool_id",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "Pool": "pool_name",
+                    "factory_id": "factory_id",
+                    "Current_vAPR": "current_vapr",
+                    "Projected_vAPR": "projected_vapr",
+                    "TVL": "tvl",
+                    "veCRV_boost": "vecrv_boost",
+                    "Remarks": "remarks",
+                    "current_vapr_numeric": "current_vapr_numeric",
+                    "projected_vapr_numeric": "projected_vapr_numeric",
+                    "tvl_numeric": "tvl_numeric",
+                    "veCRV_boost_numeric": "vecrv_boost_numeric",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "ConvexPoolOHLCDaily": {
+                "table": "convex_pool_ohlc_daily",
+                "on_conflict": "pool_id_type,timestamp",
+                "columns": {
+                    "pool_id_type": "pool_id_type",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "Pool": "pool_name",
+                    "pool_id": "pool_id",
+                    "factory_id": "factory_id",
+                    "type": "type",
+                    "open": "open",
+                    "high": "high",
+                    "low": "low",
+                    "close": "close",
+                    "sample_count": "sample_count",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "ConvexPoolRemarksHistory": {
+                "table": "convex_pool_remarks_history",
+                "on_conflict": "pool_id,timestamp",
+                "columns": {
+                    "pool_id": "pool_id",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "Pool": "pool_name",
+                    "factory_id": "factory_id",
+                    "Remarks": "remarks",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "CvxStakeHistory": {
+                "table": "cvx_stake_history",
+                "on_conflict": "token,timestamp",
+                "columns": {
+                    "token": "token",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "vapr": "vapr",
+                    "tvl": "tvl",
+                    "vapr_numeric": "vapr_numeric",
+                    "tvl_numeric": "tvl_numeric",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "CvxStakeOHLCDaily": {
+                "table": "cvx_stake_ohlc_daily",
+                "on_conflict": "type,timestamp",
+                "columns": {
+                    "type": "type",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "token": "token",
+                    "open": "open",
+                    "high": "high",
+                    "low": "low",
+                    "close": "close",
+                    "sample_count": "sample_count",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "CvxCrvStakeHistory": {
+                "table": "cvx_crv_stake_history",
+                "on_conflict": "stake,timestamp",
+                "columns": {
+                    "stake": "stake",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "pool": "pool",
+                    "max_vapr_gov_token_rewards": "max_vapr_gov_token_rewards",
+                    "max_vapr_stablecoin_rewards": "max_vapr_stablecoin_rewards",
+                    "tvl": "tvl",
+                    "max_vapr_gov_numeric": "max_vapr_gov_numeric",
+                    "max_vapr_stable_numeric": "max_vapr_stable_numeric",
+                    "tvl_numeric": "tvl_numeric",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "CvxCrvStakeOHLCDaily": {
+                "table": "cvx_crv_stake_ohlc_daily",
+                "on_conflict": "type,timestamp",
+                "columns": {
+                    "type": "type",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "pool": "pool",
+                    "stake": "stake",
+                    "open": "open",
+                    "high": "high",
+                    "low": "low",
+                    "close": "close",
+                    "sample_count": "sample_count",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+        }
+
+    def _normalize_value(self, value):
+        if isinstance(value, Decimal):
+            if value % 1 == 0:
+                return int(value)
+            return float(value)
+        if isinstance(value, list):
+            return [self._normalize_value(v) for v in value]
+        if isinstance(value, dict):
+            return {k: self._normalize_value(v) for k, v in value.items()}
+        return value
+
+    def _map_to_supabase(self, table_name: str, item: Dict[str, Any]) -> Dict[str, Any]:
+        mapping = self._supabase_table_map().get(table_name, {})
+        columns = mapping.get("columns", {})
+        mapped = {}
+        for key, value in item.items():
+            if key in columns:
+                mapped[columns[key]] = self._normalize_value(value)
+        return mapped
+
+    def _map_from_supabase(self, table_name: str, row: Dict[str, Any]) -> Dict[str, Any]:
+        mapping = self._supabase_table_map().get(table_name, {})
+        columns = mapping.get("columns", {})
+        reverse = {v: k for k, v in columns.items()}
+        mapped = {}
+        for key, value in row.items():
+            if key in reverse:
+                mapped[reverse[key]] = value
+        return mapped
+
+    def db_put_item(self, table_name: str, item: Dict[str, Any]):
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name)
+            if not mapping:
+                raise ValueError(f"Supabase mapping not found for {table_name}")
+            payload = self._map_to_supabase(table_name, item)
+            if not payload:
+                return
+            self.supabase.table(mapping["table"]).upsert(
+                payload, on_conflict=mapping["on_conflict"]
+            ).execute()
+            return
+
+        table = self.tables[table_name]
+        table.put_item(Item=item)
+
+    def db_scan_items(self, table_name: str) -> List[Dict[str, Any]]:
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name)
+            if not mapping:
+                return []
+            items = []
+            offset = 0
+            page_size = 1000
+            while True:
+                response = self.supabase.table(mapping["table"]).select("*").range(
+                    offset, offset + page_size - 1
+                ).execute()
+                data = response.data or []
+                if not data:
+                    break
+                items.extend([self._map_from_supabase(table_name, row) for row in data])
+                if len(data) < page_size:
+                    break
+                offset += page_size
+            return items
+
+        table = self.tables[table_name]
+        response = table.scan()
+        items = response.get('Items', [])
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            items.extend(response.get('Items', []))
+        return items
+
+    def db_query_items(self, table_name: str, key_name: str, key_value: Any, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name)
+            if not mapping:
+                return []
+            column = mapping["columns"].get(key_name, key_name)
+            query = self.supabase.table(mapping["table"]).select("*").eq(column, key_value)
+            if limit:
+                query = query.limit(limit)
+            response = query.execute()
+            return [self._map_from_supabase(table_name, row) for row in (response.data or [])]
+
+        table = self.tables[table_name]
+        response = table.query(KeyConditionExpression=Key(key_name).eq(key_value), Limit=limit)
+        items = response.get('Items', [])
+        while 'LastEvaluatedKey' in response and not limit:
+            response = table.query(
+                KeyConditionExpression=Key(key_name).eq(key_value),
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            items.extend(response.get('Items', []))
+        return items
+
+    def db_get_item(self, table_name: str, key: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name)
+            if not mapping:
+                return None
+            query = self.supabase.table(mapping["table"]).select("*")
+            for key_name, value in key.items():
+                column = mapping["columns"].get(key_name, key_name)
+                query = query.eq(column, value)
+            response = query.limit(1).execute()
+            data = response.data or []
+            if not data:
+                return None
+            return self._map_from_supabase(table_name, data[0])
+
+        table = self.tables[table_name]
+        response = table.get_item(Key=key)
+        return response.get('Item')
+
+    def db_delete_items(self, table_name: str, keys: List[Dict[str, Any]]):
+        if not keys:
+            return 0
+
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name)
+            if not mapping:
+                return 0
+            deleted = 0
+            for key in keys:
+                query = self.supabase.table(mapping["table"]).delete()
+                for key_name, value in key.items():
+                    column = mapping["columns"].get(key_name, key_name)
+                    query = query.eq(column, value)
+                query.execute()
+                deleted += 1
+            return deleted
+
+        table = self.tables[table_name]
+        deleted = 0
+        for i in range(0, len(keys), 25):
+            batch = keys[i:i+25]
+            with table.batch_writer() as batch_writer:
+                for key in batch:
+                    batch_writer.delete_item(Key=key)
+                    deleted += 1
+        return deleted
 
     def setup_aws(self):
         """AWS設定"""
@@ -422,7 +791,6 @@ class ConvexEC2Complete:
             return False
             
         try:
-            table = self.tables['USDJPYHistory']
             jst_iso_timestamp = self.get_jst_iso_timestamp()
             jst_created_at = datetime.now(self.JST).isoformat()
             
@@ -440,7 +808,7 @@ class ConvexEC2Complete:
                     'created_at': jst_created_at
                 }
                 
-                table.put_item(Item=item)
+                self.db_put_item('USDJPYHistory', item)
                 saved_count += 1
                 self.logger.info(f"✅ USD/JPY為替レート保存: ¥{usd_jpy_rate:.2f}")
             
@@ -1148,25 +1516,13 @@ class ConvexEC2Complete:
             return False
         
         try:
-            table = self.tables['PoolLatest']
-            
             # テーブルの全データをスキャン
             self.logger.info("🗑️ PoolLatestテーブルをクリア中...")
-            response = table.scan()
-            items = response.get('Items', [])
-            
-            # ページネーション対応（データが多い場合）
-            while 'LastEvaluatedKey' in response:
-                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-                items.extend(response.get('Items', []))
+            items = self.db_scan_items('PoolLatest')
             
             deleted_count = 0
-            
-            # バッチ削除（最大25件ずつ）
-            with table.batch_writer() as batch:
-                for item in items:
-                    batch.delete_item(Key={'pool_id': item['pool_id']})
-                    deleted_count += 1
+            delete_keys = [{'pool_id': item['pool_id']} for item in items if item.get('pool_id')]
+            deleted_count = self.db_delete_items('PoolLatest', delete_keys)
             
             self.logger.info(f"✅ PoolLatestテーブルクリア完了: {deleted_count}件削除")
             return True
@@ -1182,7 +1538,6 @@ class ConvexEC2Complete:
             return False
             
         try:
-            table = self.tables['PoolLatest']
             pool_name, current_vapr, projected_vapr, vecrv_boost, remarks, tvl = pool_data
             
             # プールIDの生成を改善（特殊文字を適切に処理）
@@ -1239,18 +1594,13 @@ class ConvexEC2Complete:
             
             # 既存データの確認（デバッグ用）
             try:
-                existing_response = table.query(
-                    KeyConditionExpression='pool_id = :pool_id',
-                    ExpressionAttributeValues={':pool_id': pool_id},
-                    Limit=1
-                )
-                existing_count = len(existing_response.get('Items', []))
-                self.logger.info(f"   - 既存データ件数: {existing_count}")
+                existing_items = self.db_query_items('PoolLatest', 'pool_id', pool_id, limit=1)
+                self.logger.info(f"   - 既存データ件数: {len(existing_items)}")
             except Exception as e:
                 self.logger.warning(f"   - 既存データ確認エラー: {e}")
             
             # 最新データを上書き保存（同じpool_idの場合は自動的に上書きされる）
-            table.put_item(Item=latest_item)
+            self.db_put_item('PoolLatest', latest_item)
             self.logger.info(f"✅ PoolLatest保存成功: {pool_name} (ID: {pool_id})")
             return True
             
@@ -1267,12 +1617,8 @@ class ConvexEC2Complete:
             return False
             
         try:
-            table = self.tables['PoolLatest']
-            
             # PoolLatestテーブルの全データを取得
-            response = table.scan()
-            items = response.get('Items', [])
-            
+            items = self.db_scan_items('PoolLatest')
             self.logger.info(f"📊 PoolLatestテーブルから {len(items)}件のデータを取得")
             
             updated_count = 0
@@ -1290,14 +1636,14 @@ class ConvexEC2Complete:
                 if factory_id:
                     # factory_idを追加して更新
                     item['factory_id'] = str(factory_id)
-                    table.put_item(Item=item)
+                    self.db_put_item('PoolLatest', item)
                     used_factory_ids.add(factory_id)  # 使用済みに追加
                     matched_count += 1
                     self.logger.info(f"✅ factory_id追加: {pool_name} -> ID: {factory_id}")
                 else:
                     # factory_idが見つからない場合はnullを設定
                     item['factory_id'] = None
-                    table.put_item(Item=item)
+                    self.db_put_item('PoolLatest', item)
                 
                 updated_count += 1
             
@@ -1324,8 +1670,6 @@ class ConvexEC2Complete:
 
             # CVXデータを保存（CvxStakeHistoryテーブルに保存）
             if data['cvx'] and data['cvx']['vapr'] and 'CvxStakeHistory' in self.tables:
-                table = self.tables['CvxStakeHistory']
-                
                 item = {
                     'token': 'CVX',
                     'timestamp': jst_iso_timestamp,  # 日本時間
@@ -1339,13 +1683,11 @@ class ConvexEC2Complete:
                     'datetime': jst_iso_timestamp  # datetimeフィールドも追加
                 }
                 
-                table.put_item(Item=item)
+                self.db_put_item('CvxStakeHistory', item)
                 self.logger.info(f"✅ CVX保存（JST）: vAPR={data['cvx']['vapr']}%, TVL=${data['cvx']['tvl']}")
 
             # cvxCRVデータを保存（CvxCrvStakeHistoryテーブルに保存）
             if data['cvxcrv'] and data['cvxcrv']['max_vapr_gov'] and 'CvxCrvStakeHistory' in self.tables:
-                table = self.tables['CvxCrvStakeHistory']
-                
                 item = {
                     'stake': 'cvxCRV',
                     'timestamp': jst_iso_timestamp,  # 日本時間
@@ -1362,7 +1704,7 @@ class ConvexEC2Complete:
                     'datetime': jst_iso_timestamp  # datetimeフィールドも追加
                 }
                 
-                table.put_item(Item=item)
+                self.db_put_item('CvxCrvStakeHistory', item)
                 self.logger.info(f"✅ cvxCRV保存（JST）: Gov={data['cvxcrv']['max_vapr_gov']}%, Stable={data['cvxcrv']['max_vapr_stable']}%, TVL=${data['cvxcrv']['tvl']}")
 
             # Curveプールデータを履歴テーブル（ConvexPoolHistory）と最新テーブル（PoolLatest）両方に保存
@@ -1391,7 +1733,7 @@ class ConvexEC2Complete:
                 if 'PoolLatest' in self.tables:
                     self.clear_pool_latest_table()
                 
-                history_table = self.tables['ConvexPoolHistory']
+                history_table = 'ConvexPoolHistory'
                 latest_success_count = 0
                 history_success_count = 0
                 
@@ -1448,7 +1790,7 @@ class ConvexEC2Complete:
                         # NoneやNaN値を除去
                         history_item = {k: v for k, v in history_item.items() if v is not None and v != ''}
                         
-                        history_table.put_item(Item=history_item)
+                        self.db_put_item(history_table, history_item)
                         history_success_count += 1
                         factory_info = f" (factory_id: {factory_id})" if factory_id else " (factory_id: None)"
                         self.logger.info(f"✅ ConvexPoolHistory保存成功: {pool_name} (ID: {pool_id}){factory_info}")
@@ -1501,20 +1843,7 @@ class ConvexEC2Complete:
                 self.logger.error("❌ CvxStakeHistoryテーブルに接続できません")
                 return False
             
-            history_table = self.tables['CvxStakeHistory']
-            response = history_table.query(
-                KeyConditionExpression=Key('token').eq('CVX')
-            )
-            
-            items = response['Items']
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = history_table.query(
-                    KeyConditionExpression=Key('token').eq('CVX'),
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
-                items.extend(response['Items'])
+            items = self.db_query_items('CvxStakeHistory', 'token', 'CVX')
             
             # 前日のデータのみフィルタリング
             yesterday_items = []
@@ -1551,7 +1880,6 @@ class ConvexEC2Complete:
                 self.logger.error("❌ CvxStakeOHLCDailyテーブルに接続できません")
                 return False
             
-            ohlc_table = self.tables['CvxStakeOHLCDaily']
             jst_created_at = datetime.now(self.JST).isoformat()
             date_dt = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
             jst_datetime = date_dt.isoformat()
@@ -1574,7 +1902,7 @@ class ConvexEC2Complete:
                     'datetime': jst_datetime,
                     'created_at': jst_created_at
                 }
-                ohlc_table.put_item(Item=item)
+                self.db_put_item('CvxStakeOHLCDaily', item)
                 saved_count += 1
                 self.logger.info(f"✅ vapr OHLC保存: {yesterday_date_str} - O={vapr_ohlc['open']:.6f}, H={vapr_ohlc['high']:.6f}, L={vapr_ohlc['low']:.6f}, C={vapr_ohlc['close']:.6f}")
             
@@ -1594,7 +1922,7 @@ class ConvexEC2Complete:
                     'datetime': jst_datetime,
                     'created_at': jst_created_at
                 }
-                ohlc_table.put_item(Item=item)
+                self.db_put_item('CvxStakeOHLCDaily', item)
                 saved_count += 1
                 self.logger.info(f"✅ tvl OHLC保存: {yesterday_date_str} - O={tvl_ohlc['open']:.6f}, H={tvl_ohlc['high']:.6f}, L={tvl_ohlc['low']:.6f}, C={tvl_ohlc['close']:.6f}")
             
@@ -1683,39 +2011,19 @@ class ConvexEC2Complete:
                 self.logger.error("❌ CvxStakeHistoryテーブルに接続できません")
                 return False
             
-            table = self.tables['CvxStakeHistory']
-            
-            # 全データを取得
-            response = table.query(
-                KeyConditionExpression=Key('token').eq('CVX')
-            )
-            items = response['Items']
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = table.query(
-                    KeyConditionExpression=Key('token').eq('CVX'),
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
-                items.extend(response['Items'])
+            items = self.db_query_items('CvxStakeHistory', 'token', 'CVX')
             
             if not items:
                 self.logger.info("📊 CvxStakeHistoryテーブルは既に空です")
                 return True
             
             # バッチ削除
-            deleted_count = 0
-            for i in range(0, len(items), 25):
-                batch = items[i:i+25]
-                
-                with table.batch_writer() as batch_writer:
-                    for item in batch:
-                        key = {
-                            'token': item['token'],
-                            'timestamp': item['timestamp']
-                        }
-                        batch_writer.delete_item(Key=key)
-                        deleted_count += 1
+            delete_keys = [
+                {'token': item['token'], 'timestamp': item['timestamp']}
+                for item in items
+                if item.get('token') and item.get('timestamp')
+            ]
+            deleted_count = self.db_delete_items('CvxStakeHistory', delete_keys)
             
             self.logger.info(f"✅ CvxStakeHistoryテーブルをクリアしました: {deleted_count}件削除")
             return True
@@ -1751,17 +2059,8 @@ class ConvexEC2Complete:
                 self.logger.error("❌ ConvexPoolHistoryテーブルに接続できません")
                 return False
             
-            history_table = self.tables['ConvexPoolHistory']
-            
             # 全データをスキャン
-            all_items = []
-            response = history_table.scan()
-            all_items.extend(response['Items'])
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = history_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-                all_items.extend(response['Items'])
+            all_items = self.db_scan_items('ConvexPoolHistory')
             
             # 前日のデータのみフィルタリング
             yesterday_items = []
@@ -1800,7 +2099,6 @@ class ConvexEC2Complete:
                 self.logger.error("❌ ConvexPoolOHLCDailyテーブルに接続できません")
                 return False
             
-            ohlc_table = self.tables['ConvexPoolOHLCDaily']
             jst_created_at = datetime.now(self.JST).isoformat()
             date_dt = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
             jst_datetime = date_dt.isoformat()
@@ -1822,13 +2120,14 @@ class ConvexEC2Complete:
                     try:
                         # 既存データチェック
                         partition_key = f"{pool_id}#{type_name}"
-                        response = ohlc_table.get_item(
-                            Key={
+                        existing_item = self.db_get_item(
+                            'ConvexPoolOHLCDaily',
+                            {
                                 'pool_id_type': partition_key,
                                 'timestamp': yesterday_date_str
                             }
                         )
-                        if 'Item' in response:
+                        if existing_item:
                             self.logger.debug(f"⏭️  {type_name} {pool_id} {yesterday_date_str} は既に存在するためスキップ")
                             continue
                         
@@ -1857,7 +2156,7 @@ class ConvexEC2Complete:
                         # None値を除去
                         item = {k: v for k, v in item.items() if v is not None and v != ''}
                         
-                        ohlc_table.put_item(Item=item)
+                        self.db_put_item('ConvexPoolOHLCDaily', item)
                         ohlc_saved_count += 1
                         
                     except Exception as e:
@@ -1871,7 +2170,6 @@ class ConvexEC2Complete:
                 self.logger.error("❌ ConvexPoolRemarksHistoryテーブルに接続できません")
                 return False
             
-            remarks_table = self.tables['ConvexPoolRemarksHistory']
             remarks_saved_count = 0
             
             # Remarksが空でないデータをフィルタリング
@@ -1892,13 +2190,14 @@ class ConvexEC2Complete:
                 
                 try:
                     # 既存データチェック（元のtimestampを使用）
-                    response = remarks_table.get_item(
-                        Key={
+                    existing_item = self.db_get_item(
+                        'ConvexPoolRemarksHistory',
+                        {
                             'pool_id': pool_id,
                             'timestamp': timestamp_str  # 元のConvexPoolHistoryのtimestampを使用
                         }
                     )
-                    if 'Item' in response:
+                    if existing_item:
                         continue
                     
                     # ISO形式のタイムスタンプをパースしてJSTに変換
@@ -1923,7 +2222,7 @@ class ConvexEC2Complete:
                     # None値を除去
                     remarks_item = {k: v for k, v in remarks_item.items() if v is not None and v != ''}
                     
-                    remarks_table.put_item(Item=remarks_item)
+                    self.db_put_item('ConvexPoolRemarksHistory', remarks_item)
                     remarks_saved_count += 1
                     
                     if remarks_saved_count % 100 == 0:
@@ -2046,35 +2345,19 @@ class ConvexEC2Complete:
                 self.logger.error("❌ ConvexPoolHistoryテーブルに接続できません")
                 return False
             
-            table = self.tables['ConvexPoolHistory']
-            
             # 全データをスキャン
-            all_items = []
-            response = table.scan()
-            all_items.extend(response['Items'])
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-                all_items.extend(response['Items'])
+            all_items = self.db_scan_items('ConvexPoolHistory')
             
             if not all_items:
                 self.logger.info("📊 ConvexPoolHistoryテーブルは既に空です")
                 return True
             
-            # バッチ削除
-            deleted_count = 0
-            for i in range(0, len(all_items), 25):
-                batch = all_items[i:i+25]
-                
-                with table.batch_writer() as batch_writer:
-                    for item in batch:
-                        key = {
-                            'pool_id': item['pool_id'],
-                            'timestamp': item['timestamp']
-                        }
-                        batch_writer.delete_item(Key=key)
-                        deleted_count += 1
+            delete_keys = [
+                {'pool_id': item['pool_id'], 'timestamp': item['timestamp']}
+                for item in all_items
+                if item.get('pool_id') and item.get('timestamp')
+            ]
+            deleted_count = self.db_delete_items('ConvexPoolHistory', delete_keys)
             
             self.logger.info(f"✅ ConvexPoolHistoryテーブルをクリアしました: {deleted_count}件削除")
             return True
@@ -2110,20 +2393,7 @@ class ConvexEC2Complete:
                 self.logger.error("❌ CvxCrvStakeHistoryテーブルに接続できません")
                 return False
             
-            history_table = self.tables['CvxCrvStakeHistory']
-            response = history_table.query(
-                KeyConditionExpression=Key('stake').eq('cvxCRV')
-            )
-            
-            items = response['Items']
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = history_table.query(
-                    KeyConditionExpression=Key('stake').eq('cvxCRV'),
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
-                items.extend(response['Items'])
+            items = self.db_query_items('CvxCrvStakeHistory', 'stake', 'cvxCRV')
             
             # 前日のデータのみフィルタリング
             yesterday_items = []
@@ -2161,7 +2431,6 @@ class ConvexEC2Complete:
                 self.logger.error("❌ CvxCrvStakeOHLCDailyテーブルに接続できません")
                 return False
             
-            ohlc_table = self.tables['CvxCrvStakeOHLCDaily']
             jst_created_at = datetime.now(self.JST).isoformat()
             date_dt = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
             jst_datetime = date_dt.isoformat()
@@ -2185,7 +2454,7 @@ class ConvexEC2Complete:
                     'datetime': jst_datetime,
                     'created_at': jst_created_at
                 }
-                ohlc_table.put_item(Item=item)
+                self.db_put_item('CvxCrvStakeOHLCDaily', item)
                 saved_count += 1
                 self.logger.info(f"✅ gov OHLC保存: {yesterday_date_str} - O={gov_ohlc['open']:.6f}, H={gov_ohlc['high']:.6f}, L={gov_ohlc['low']:.6f}, C={gov_ohlc['close']:.6f}")
             
@@ -2206,7 +2475,7 @@ class ConvexEC2Complete:
                     'datetime': jst_datetime,
                     'created_at': jst_created_at
                 }
-                ohlc_table.put_item(Item=item)
+                self.db_put_item('CvxCrvStakeOHLCDaily', item)
                 saved_count += 1
                 self.logger.info(f"✅ stablecoin OHLC保存: {yesterday_date_str} - O={stablecoin_ohlc['open']:.6f}, H={stablecoin_ohlc['high']:.6f}, L={stablecoin_ohlc['low']:.6f}, C={stablecoin_ohlc['close']:.6f}")
             
@@ -2227,7 +2496,7 @@ class ConvexEC2Complete:
                     'datetime': jst_datetime,
                     'created_at': jst_created_at
                 }
-                ohlc_table.put_item(Item=item)
+                self.db_put_item('CvxCrvStakeOHLCDaily', item)
                 saved_count += 1
                 self.logger.info(f"✅ tvl OHLC保存: {yesterday_date_str} - O={tvl_ohlc['open']:.6f}, H={tvl_ohlc['high']:.6f}, L={tvl_ohlc['low']:.6f}, C={tvl_ohlc['close']:.6f}")
             
@@ -2318,39 +2587,19 @@ class ConvexEC2Complete:
                 self.logger.error("❌ CvxCrvStakeHistoryテーブルに接続できません")
                 return False
             
-            history_table = self.tables['CvxCrvStakeHistory']
-            
             # 全データを取得
-            response = history_table.query(
-                KeyConditionExpression=Key('stake').eq('cvxCRV')
-            )
-            items = response['Items']
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = history_table.query(
-                    KeyConditionExpression=Key('stake').eq('cvxCRV'),
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
-                items.extend(response['Items'])
+            items = self.db_query_items('CvxCrvStakeHistory', 'stake', 'cvxCRV')
             
             if not items:
                 self.logger.info("✅ CvxCrvStakeHistoryテーブルは既に空です")
                 return True
             
-            # バッチ削除
-            deleted_count = 0
-            for i in range(0, len(items), 25):
-                batch = items[i:i+25]
-                with history_table.batch_writer() as batch_writer:
-                    for item in batch:
-                        batch_writer.delete_item(
-                            Key={
-                                'stake': item['stake'],
-                                'timestamp': item['timestamp']
-                            }
-                        )
-                        deleted_count += 1
+            delete_keys = [
+                {'stake': item['stake'], 'timestamp': item['timestamp']}
+                for item in items
+                if item.get('stake') and item.get('timestamp')
+            ]
+            deleted_count = self.db_delete_items('CvxCrvStakeHistory', delete_keys)
             
             self.logger.info(f"✅ CvxCrvStakeHistoryテーブルをクリアしました: {deleted_count}件削除")
             return True
