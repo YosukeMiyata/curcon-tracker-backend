@@ -516,6 +516,24 @@ class TokenOHLCAggregator:
 
 def main():
     """メイン関数"""
+    # JSTの指定時間のみ実行（手動実行での誤クリア防止）
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+    target_hour = int(os.getenv("TARGET_HOUR", "0"))
+    target_minute = int(os.getenv("TARGET_MINUTE", "0"))
+    tolerance_min = int(os.getenv("TARGET_TOLERANCE_MINUTES", "10"))
+
+    if os.getenv("FORCE_RUN") != "true":
+        target_time = now_jst.replace(
+            hour=target_hour, minute=target_minute, second=0, microsecond=0
+        )
+        delta_min = abs((now_jst - target_time).total_seconds()) / 60.0
+        if delta_min > tolerance_min:
+            print(
+                f"⏭️  JST {target_hour:02d}:{target_minute:02d}±{tolerance_min}分外のためスキップ"
+            )
+            return
+
     try:
         aggregator = TokenOHLCAggregator()
         success = aggregator.run_daily_aggregation()

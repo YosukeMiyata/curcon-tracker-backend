@@ -29,5 +29,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TARGET_HOUR: "0"
+          TARGET_MINUTE: "0"
+          TARGET_TOLERANCE_MINUTES: "10"
         run: |
           python data_acquisition_system/token_price_tracker/token_ohlc_aggregator.py
