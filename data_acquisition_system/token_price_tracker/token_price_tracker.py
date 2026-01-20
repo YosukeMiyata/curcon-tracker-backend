@@ -19,6 +19,13 @@ import sys
 from pathlib import Path
 import traceback
 
+# Supabase関連のインポート
+try:
+    from supabase import create_client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+
 # Slack通知のインポート
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 try:
@@ -40,8 +47,15 @@ class TokenPriceTracker:
         # 日本時間の設定
         self.JST = timezone(timedelta(hours=9))
         
+        # 実行環境のベースディレクトリ
+        default_base_dir = Path("/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker")
+        if os.getenv("GITHUB_ACTIONS") == "true" or not default_base_dir.exists():
+            self.base_dir = Path(__file__).resolve().parent
+        else:
+            self.base_dir = default_base_dir
+
         # 追跡対象トークンリストファイルのパス
-        self.tracked_tokens_file = '/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/tracked_tokens.json'
+        self.tracked_tokens_file = str(self.base_dir / "tracked_tokens.json")
         
         # ログ設定
         self.setup_logging()
@@ -59,14 +73,14 @@ class TokenPriceTracker:
             self.logger.warning("⚠️ Slack通知モジュールが利用できません")
         
         # テーブル接続
-        self.setup_tables()
+        self.setup_database()
         
         # Curve Finance APIから価格データを取得
         self.fetch_curve_prices()
     
     def setup_logging(self):
         """ログ設定"""
-        log_file = '/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/token_price_tracker.log'
+        log_file = str(self.base_dir / "token_price_tracker.log")
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -77,6 +91,166 @@ class TokenPriceTracker:
         )
         self.logger = logging.getLogger(__name__)
     
+    def setup_database(self):
+        """DB設定（Supabase優先、なければDynamoDB）"""
+        self.db_mode = "dynamodb"
+        self.supabase = None
+
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        if supabase_url and supabase_key:
+            if not SUPABASE_AVAILABLE:
+                self.logger.error("❌ supabase パッケージが見つかりません")
+                return False
+            return self.setup_supabase(supabase_url, supabase_key)
+
+        return self.setup_tables()
+
+    def setup_supabase(self, supabase_url: str, supabase_key: str):
+        """Supabase接続設定"""
+        try:
+            self.supabase = create_client(supabase_url, supabase_key)
+            self.db_mode = "supabase"
+            self.logger.info("✅ Supabase接続成功")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Supabase接続エラー: {e}")
+            return False
+
+    def _supabase_table_map(self):
+        return {
+            "ConvexPoolOHLCDaily": {
+                "table": "convex_pool_ohlc_daily",
+                "columns": {
+                    "pool_id_type": "pool_id_type",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "Pool": "pool_name",
+                    "pool_id": "pool_id",
+                    "factory_id": "factory_id",
+                    "type": "type",
+                    "open": "open",
+                    "high": "high",
+                    "low": "low",
+                    "close": "close",
+                    "sample_count": "sample_count",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "ConvexPoolHistory": {
+                "table": "convex_pool_history",
+                "columns": {
+                    "pool_id": "pool_id",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "Pool": "pool_name",
+                    "factory_id": "factory_id",
+                    "Current_vAPR": "current_vapr",
+                    "Projected_vAPR": "projected_vapr",
+                    "TVL": "tvl",
+                    "veCRV_boost": "vecrv_boost",
+                    "Remarks": "remarks",
+                    "current_vapr_numeric": "current_vapr_numeric",
+                    "projected_vapr_numeric": "projected_vapr_numeric",
+                    "tvl_numeric": "tvl_numeric",
+                    "veCRV_boost_numeric": "vecrv_boost_numeric",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "TokenPriceHistory": {
+                "table": "token_price_history",
+                "on_conflict": "token,timestamp",
+                "columns": {
+                    "token": "token",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "price": "price",
+                    "price_numeric": "price_numeric",
+                    "pool_count": "pool_count",
+                    "pools": "pools",
+                    "factory_ids": "factory_ids",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+        }
+
+    def _normalize_value(self, value):
+        if isinstance(value, Decimal):
+            if value % 1 == 0:
+                return int(value)
+            return float(value)
+        if isinstance(value, list):
+            return [self._normalize_value(v) for v in value]
+        if isinstance(value, dict):
+            return {k: self._normalize_value(v) for k, v in value.items()}
+        return value
+
+    def _map_from_supabase(self, table_name: str, row: dict) -> dict:
+        mapping = self._supabase_table_map().get(table_name, {})
+        columns = mapping.get("columns", {})
+        reverse = {v: k for k, v in columns.items()}
+        mapped = {}
+        for key, value in row.items():
+            if key in reverse:
+                mapped[reverse[key]] = value
+        return mapped
+
+    def db_scan_items(self, table_name: str) -> list:
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name, {})
+            if not mapping:
+                return []
+            items = []
+            offset = 0
+            page_size = 1000
+            while True:
+                response = self.supabase.table(mapping["table"]).select("*").range(
+                    offset, offset + page_size - 1
+                ).execute()
+                data = response.data or []
+                if not data:
+                    break
+                items.extend([self._map_from_supabase(table_name, row) for row in data])
+                if len(data) < page_size:
+                    break
+                offset += page_size
+            return items
+
+        table = self.convex_pool_ohlc_daily_table if table_name == "ConvexPoolOHLCDaily" else self.convex_pool_history_table
+        response = table.scan()
+        items = response.get('Items', [])
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            items.extend(response.get('Items', []))
+        return items
+
+    def db_put_item(self, table_name: str, item: dict):
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name, {})
+            if not mapping:
+                return
+            columns = mapping.get("columns", {})
+            payload = {
+                columns[key]: self._normalize_value(value)
+                for key, value in item.items()
+                if key in columns
+            }
+            if not payload:
+                return
+            self.supabase.table(mapping["table"]).upsert(
+                payload, on_conflict=mapping.get("on_conflict")
+            ).execute()
+            return
+
+        self.token_price_table.put_item(Item=item)
+
     def setup_tables(self):
         """DynamoDBテーブルに接続"""
         try:
@@ -210,13 +384,7 @@ class TokenPriceTracker:
         """ConvexPoolOHLCDailyから全プールデータを取得"""
         try:
             self.logger.info("📊 ConvexPoolOHLCDailyからデータを取得中...")
-            response = self.convex_pool_ohlc_daily_table.scan()
-            items = response.get('Items', [])
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = self.convex_pool_ohlc_daily_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-                items.extend(response.get('Items', []))
+            items = self.db_scan_items("ConvexPoolOHLCDaily")
             
             self.logger.info(f"✅ {len(items)}件のデータを取得しました")
             return items
@@ -229,13 +397,7 @@ class TokenPriceTracker:
         """ConvexPoolHistoryから全プールデータを取得"""
         try:
             self.logger.info("📊 ConvexPoolHistoryからデータを取得中...")
-            response = self.convex_pool_history_table.scan()
-            items = response.get('Items', [])
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = self.convex_pool_history_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-                items.extend(response.get('Items', []))
+            items = self.db_scan_items("ConvexPoolHistory")
             
             self.logger.info(f"✅ {len(items)}件のデータを取得しました")
             return items
@@ -604,7 +766,7 @@ class TokenPriceTracker:
                 if 'pool_count' in item:
                     item['pool_count'] = int(item['pool_count'])
                 
-                self.token_price_table.put_item(Item=item)
+                self.db_put_item("TokenPriceHistory", item)
                 saved_count += 1
                 
                 pool_count_str = f" (プール数: {len(info['pools'])})" if info.get('pools') and len(info['pools']) > 0 else ""
@@ -631,7 +793,7 @@ class TokenPriceTracker:
                 'count': len(self.failed_tokens)
             }
             
-            filename = f"/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/failed_tokens_{datetime.now(self.JST).strftime('%Y%m%d_%H%M%S')}.json"
+            filename = str(self.base_dir / f"failed_tokens_{datetime.now(self.JST).strftime('%Y%m%d_%H%M%S')}.json")
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(failed_data, f, ensure_ascii=False, indent=2)
             

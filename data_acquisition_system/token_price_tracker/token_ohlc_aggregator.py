@@ -7,6 +7,7 @@
 
 import boto3
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from botocore.exceptions import ClientError
@@ -14,6 +15,13 @@ from decimal import Decimal
 import sys
 from pathlib import Path
 import traceback
+
+# Supabase関連のインポート
+try:
+    from supabase import create_client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
 # Slack通知のインポート
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -36,6 +44,13 @@ class TokenOHLCAggregator:
         # APIエンドポイント
         self.data_source_url = "https://api.curve.finance/api/getPools/all/ethereum"
         
+        # 実行環境のベースディレクトリ
+        default_base_dir = Path("/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker")
+        if os.getenv("GITHUB_ACTIONS") == "true" or not default_base_dir.exists():
+            self.base_dir = Path(__file__).resolve().parent
+        else:
+            self.base_dir = default_base_dir
+
         # ログ設定
         self.setup_logging()
         
@@ -52,11 +67,11 @@ class TokenOHLCAggregator:
             self.logger.warning("⚠️ Slack通知モジュールが利用できません")
         
         # テーブル接続
-        self.setup_tables()
+        self.setup_database()
     
     def setup_logging(self):
         """ログ設定"""
-        log_file = '/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/token_ohlc_aggregator.log'
+        log_file = str(self.base_dir / "token_ohlc_aggregator.log")
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -67,6 +82,161 @@ class TokenOHLCAggregator:
         )
         self.logger = logging.getLogger(__name__)
     
+    def setup_database(self):
+        """DB設定（Supabase優先、なければDynamoDB）"""
+        self.db_mode = "dynamodb"
+        self.supabase = None
+
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        if supabase_url and supabase_key:
+            if not SUPABASE_AVAILABLE:
+                self.logger.error("❌ supabase パッケージが見つかりません")
+                return False
+            return self.setup_supabase(supabase_url, supabase_key)
+
+        return self.setup_tables()
+
+    def setup_supabase(self, supabase_url: str, supabase_key: str):
+        """Supabase接続設定"""
+        try:
+            self.supabase = create_client(supabase_url, supabase_key)
+            self.db_mode = "supabase"
+            self.logger.info("✅ Supabase接続成功")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Supabase接続エラー: {e}")
+            return False
+
+    def _supabase_table_map(self):
+        return {
+            "TokenPriceHistory": {
+                "table": "token_price_history",
+                "columns": {
+                    "token": "token",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "price": "price",
+                    "price_numeric": "price_numeric",
+                    "pool_count": "pool_count",
+                    "pools": "pools",
+                    "factory_ids": "factory_ids",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+            "TokenOHLCDaily": {
+                "table": "token_ohlc_daily",
+                "on_conflict": "token,timestamp",
+                "columns": {
+                    "token": "token",
+                    "timestamp": "timestamp",
+                    "timezone": "timezone",
+                    "open": "open",
+                    "high": "high",
+                    "low": "low",
+                    "close": "close",
+                    "sample_count": "sample_count",
+                    "data_source": "data_source",
+                    "datetime": "datetime",
+                    "created_at": "created_at",
+                },
+            },
+        }
+
+    def _normalize_value(self, value):
+        if isinstance(value, Decimal):
+            if value % 1 == 0:
+                return int(value)
+            return float(value)
+        if isinstance(value, list):
+            return [self._normalize_value(v) for v in value]
+        if isinstance(value, dict):
+            return {k: self._normalize_value(v) for k, v in value.items()}
+        return value
+
+    def _map_from_supabase(self, table_name: str, row: dict) -> dict:
+        mapping = self._supabase_table_map().get(table_name, {})
+        columns = mapping.get("columns", {})
+        reverse = {v: k for k, v in columns.items()}
+        mapped = {}
+        for key, value in row.items():
+            if key in reverse:
+                mapped[reverse[key]] = value
+        return mapped
+
+    def db_scan_items(self, table_name: str) -> list:
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name, {})
+            if not mapping:
+                return []
+            items = []
+            offset = 0
+            page_size = 1000
+            while True:
+                response = self.supabase.table(mapping["table"]).select("*").range(
+                    offset, offset + page_size - 1
+                ).execute()
+                data = response.data or []
+                if not data:
+                    break
+                items.extend([self._map_from_supabase(table_name, row) for row in data])
+                if len(data) < page_size:
+                    break
+                offset += page_size
+            return items
+
+        table = self.price_history_table
+        response = table.scan()
+        items = response.get('Items', [])
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            items.extend(response.get('Items', []))
+        return items
+
+    def db_put_item(self, table_name: str, item: dict):
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name, {})
+            if not mapping:
+                return
+            columns = mapping.get("columns", {})
+            payload = {
+                columns[key]: self._normalize_value(value)
+                for key, value in item.items()
+                if key in columns
+            }
+            if not payload:
+                return
+            self.supabase.table(mapping["table"]).upsert(
+                payload, on_conflict=mapping.get("on_conflict")
+            ).execute()
+            return
+
+        self.ohlc_table.put_item(Item=item)
+
+    def db_delete_items(self, table_name: str, keys: list) -> int:
+        if self.db_mode == "supabase":
+            mapping = self._supabase_table_map().get(table_name, {})
+            if not mapping:
+                return 0
+            deleted = 0
+            for key in keys:
+                query = self.supabase.table(mapping["table"]).delete()
+                for key_name, value in key.items():
+                    column = mapping["columns"].get(key_name, key_name)
+                    query = query.eq(column, value)
+                query.execute()
+                deleted += 1
+            return deleted
+
+        deleted = 0
+        for key in keys:
+            self.price_history_table.delete_item(Key=key)
+            deleted += 1
+        return deleted
+
     def setup_tables(self):
         """DynamoDBテーブルに接続"""
         try:
@@ -105,17 +275,8 @@ class TokenOHLCAggregator:
             
             self.logger.info(f"📅 対象期間: {yesterday_start_iso} ～ {yesterday_end_iso}")
             
-            # 全データをスキャン
-            all_items = []
-            response = self.price_history_table.scan()
-            all_items.extend(response.get('Items', []))
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = self.price_history_table.scan(
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
-                all_items.extend(response.get('Items', []))
+            # 全データを取得
+            all_items = self.db_scan_items("TokenPriceHistory")
             
             # 昨日のデータのみにフィルタリング
             yesterday_items = []
@@ -216,7 +377,7 @@ class TokenOHLCAggregator:
                         'created_at': jst_created_at
                     }
                     
-                    self.ohlc_table.put_item(Item=item)
+                    self.db_put_item("TokenOHLCDaily", item)
                     saved_count += 1
                     
                 except Exception as e:
@@ -250,22 +411,14 @@ class TokenOHLCAggregator:
             self.logger.info(f"📅 保持するデータ: {midnight_iso} 以降")
             
             # 全データを取得
-            all_items = []
-            response = self.price_history_table.scan()
-            all_items.extend(response.get('Items', []))
-            
-            # ページネーション対応
-            while 'LastEvaluatedKey' in response:
-                response = self.price_history_table.scan(
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
-                all_items.extend(response.get('Items', []))
+            all_items = self.db_scan_items("TokenPriceHistory")
             
             # 深夜00:00以降のデータは保持し、それ以前のデータを削除
             deleted_count = 0
             kept_count = 0
             failed_count = 0
             
+            delete_keys = []
             for item in all_items:
                 timestamp = item.get('timestamp', '')
                 
@@ -276,17 +429,14 @@ class TokenOHLCAggregator:
                 
                 # 深夜00:00以前のデータを削除
                 try:
-                    self.price_history_table.delete_item(
-                        Key={
-                            'token': item['token'],
-                            'timestamp': item['timestamp']
-                        }
-                    )
-                    deleted_count += 1
+                    delete_keys.append({'token': item['token'], 'timestamp': item['timestamp']})
                     
                 except Exception as e:
                     self.logger.error(f"❌ 削除エラー {item.get('token')}: {e}")
                     failed_count += 1
+
+            if delete_keys:
+                deleted_count = self.db_delete_items("TokenPriceHistory", delete_keys)
             
             self.logger.info(f"✅ クリア完了: {deleted_count}件削除, {kept_count}件保持, {failed_count}件失敗")
             return True

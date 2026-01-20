@@ -1,13 +1,13 @@
-name: Convex Scraper (Supabase)
+name: Convex Daily Aggregation (JST 00:30)
 
 on:
   schedule:
-    # JST 毎時00分 = UTC 15:00-23:00,0:00-14:00
-    - cron: "0 15-23,0-14 * * *"
+    # JST 毎日00:30 = UTC 15:30
+    - cron: "30 15 * * *"
   workflow_dispatch: {}
 
 jobs:
-  scrape:
+  aggregate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -30,14 +30,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run scraper
+      - name: Run daily aggregation
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          RUN_ONCE: "true"
+          RUN_DAILY_ONLY: "true"
         run: |
-          # NOTE: Replace this with your Supabase-enabled scraper entrypoint.
-          # Example: python data_acquisition_system/convex_ec2_complete_supabase.py
           python data_acquisition_system/convex_ec2_complete.py

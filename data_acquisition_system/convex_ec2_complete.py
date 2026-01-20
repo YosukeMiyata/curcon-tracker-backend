@@ -2630,7 +2630,7 @@ class ConvexEC2Complete:
             now_jst = datetime.now().astimezone(self.JST)
             
             # 午前0時30分の場合、前日のOHLC集約と履歴テーブルクリアを実行
-            if now_jst.hour == 0 and now_jst.minute == 30:
+            if now_jst.hour == 0 and now_jst.minute == 30 and os.getenv("SKIP_DAILY_AGGREGATION") != "true":
                 self.logger.info("🌅 午前0時30分: 前日のOHLC集約と履歴テーブルクリア処理を実行します")
                 # CVX用のOHLC集約とクリア
                 cvx_ohlc_success = self.aggregate_yesterday_ohlc_and_clear_history()
@@ -2828,13 +2828,25 @@ class ConvexEC2Complete:
 def main():
     """メイン関数"""
     try:
+        # スクレイパー初期化
+        scraper = ConvexEC2Complete()
+
+        # 日次集約のみ実行
+        if os.getenv("RUN_DAILY_ONLY") == "true":
+            scraper.aggregate_yesterday_ohlc_and_clear_history()
+            scraper.aggregate_yesterday_cvxcrv_ohlc_and_clear_history()
+            scraper.aggregate_yesterday_convex_pool_ohlc_and_remarks()
+            return
+
+        # GitHub ActionsやRUN_ONCE指定時は1回だけ実行して終了
+        if os.getenv("RUN_ONCE") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
+            scraper.run_complete_job()
+            return
+
         # 実行間隔を環境変数から取得（デフォルト60分）
         interval = int(os.getenv('EXECUTION_INTERVAL', '60'))
         # 実行分を環境変数から取得（デフォルト30分）
         target_minute = int(os.getenv('EXECUTION_TARGET_MINUTE', '30'))
-        
-        # スクレイパー初期化・実行
-        scraper = ConvexEC2Complete()
         scraper.start_production(interval_minutes=interval, target_minute=target_minute)
         
     except Exception as e:
