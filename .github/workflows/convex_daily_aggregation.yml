@@ -41,3 +41,4 @@ jobs:
           TARGET_TOLERANCE_MINUTES: "10"
         run: |
           python data_acquisition_system/convex_ec2_complete.py
+          

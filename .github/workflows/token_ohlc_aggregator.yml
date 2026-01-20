@@ -34,3 +34,4 @@ jobs:
           TARGET_TOLERANCE_MINUTES: "10"
         run: |
           python data_acquisition_system/token_price_tracker/token_ohlc_aggregator.py
+          

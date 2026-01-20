@@ -39,3 +39,4 @@ jobs:
           RUN_ONCE: "true"
         run: |
           python data_acquisition_system/convex_ec2_complete.py
+          

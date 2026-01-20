@@ -31,3 +31,4 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           python data_acquisition_system/token_price_tracker/token_price_tracker.py
+          
