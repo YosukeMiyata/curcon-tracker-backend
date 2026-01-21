@@ -14,6 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Log schedule context
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "run_id=${{ github.run_id }}"
+          echo "utc=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "jst=$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST')"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -34,4 +41,4 @@ jobs:
           TARGET_TOLERANCE_MINUTES: "10"
         run: |
           python data_acquisition_system/token_price_tracker/token_ohlc_aggregator.py
-          
+
