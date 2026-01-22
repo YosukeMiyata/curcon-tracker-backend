@@ -1,9 +1,6 @@
 name: Token OHLC Aggregator (JST 00:00)
 
 on:
-  schedule:
-    # JST 毎日00:00 = UTC 15:00
-    - cron: "0 15 * * *"
   workflow_dispatch: {}
 
 jobs:

@@ -1,9 +1,6 @@
 name: Convex Scraper (JST :00)
 
 on:
-  schedule:
-    # JST 毎時00分 = UTC 15:00-23:00,0:00-14:00
-    - cron: "0 15-23,0-14 * * *"
   workflow_dispatch: {}
 
 jobs:

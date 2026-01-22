@@ -1,9 +1,6 @@
 name: Token Price Tracker (JST :30)
 
 on:
-  schedule:
-    # JST 毎時30分 = UTC 15:30-23:30,0:30-14:30
-    - cron: "30 15-23,0-14 * * *"
   workflow_dispatch: {}
 
 jobs:

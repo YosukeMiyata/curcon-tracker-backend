@@ -1,9 +1,6 @@
 name: Convex Daily Aggregation (JST 00:30)
 
 on:
-  schedule:
-    # JST 毎日00:30 = UTC 15:30
-    - cron: "30 15 * * *"
   workflow_dispatch: {}
 
 jobs:
