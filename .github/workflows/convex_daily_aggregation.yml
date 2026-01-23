@@ -41,7 +41,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_DAILY_ONLY: "true"
           TARGET_HOUR: "0"
-          TARGET_MINUTE: "30"
+          TARGET_MINUTE: "0"
           TARGET_TOLERANCE_MINUTES: "10"
         run: |
           python data_acquisition_system/convex_ec2_complete.py
