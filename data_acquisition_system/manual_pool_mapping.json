@@ -298,5 +298,7 @@
   "crvUSD​+ZCHF": "factory-twocrypto-274",
   "pmUSD​+frxUSD": "factory-stable-ng-653",
   "pmUSD​+crvUSD": "factory-stable-ng-652",
-  "OETH​+ARM-WETH-stETH": "factory-stable-ng-641"
+  "OETH​+ARM-WETH-stETH": "factory-stable-ng-641",
+  "sdUSD​+sfrxUSD": "factory-stable-ng-648",
+  "USDC​+savUSD": "factory-stable-ng-655"
 }
