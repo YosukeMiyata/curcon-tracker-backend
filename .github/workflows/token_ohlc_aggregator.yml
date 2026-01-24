@@ -5,8 +5,11 @@ on:
 
 jobs:
   aggregate:
+    concurrency:
+      group: token-ohlc-aggregator
+      cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +37,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           TARGET_HOUR: "0"
-          TARGET_MINUTE: "30"
+          TARGET_MINUTE: "0"
           TARGET_TOLERANCE_MINUTES: "10"
         run: |
           python data_acquisition_system/token_price_tracker/token_ohlc_aggregator.py

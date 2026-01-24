@@ -5,6 +5,9 @@ on:
 
 jobs:
   scrape:
+    concurrency:
+      group: convex-scraper
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
