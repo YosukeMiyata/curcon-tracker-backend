@@ -300,5 +300,6 @@
   "pmUSD​+crvUSD": "factory-stable-ng-652",
   "OETH​+ARM-WETH-stETH": "factory-stable-ng-641",
   "sdUSD​+sfrxUSD": "factory-stable-ng-648",
-  "USDC​+savUSD": "factory-stable-ng-655"
+  "USDC​+savUSD": "factory-stable-ng-655",
+  "WBTC​+cbBTC​+hemiBTC": "factory-stable-ng-625"
 }
