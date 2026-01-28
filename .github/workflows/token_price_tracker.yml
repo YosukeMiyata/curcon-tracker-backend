@@ -1,4 +1,4 @@
-name: Token Price Tracker (JST :30)
+name: Token Price Tracker (JST :00)
 
 on:
   workflow_dispatch: {}

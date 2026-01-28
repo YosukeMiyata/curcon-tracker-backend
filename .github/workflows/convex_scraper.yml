@@ -1,4 +1,4 @@
-name: Convex Scraper (JST :00)
+name: Convex Scraper (JST :30)
 
 on:
   workflow_dispatch: {}
