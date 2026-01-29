@@ -2082,8 +2082,7 @@ class ConvexEC2Complete:
             
             if not yesterday_items:
                 self.logger.warning(f"⚠️ {yesterday_date_str}のデータがありません。クリア処理のみ実行します。")
-                # データがなくてもクリア処理は実行
-                self.clear_convex_pool_history_table()
+                # 前日データが空の場合は削除をスキップ（当日分を消さない）
                 return True
             
             self.logger.info(f"✅ {len(yesterday_items)}件の前日データを取得しました")
@@ -2235,7 +2234,12 @@ class ConvexEC2Complete:
             self.logger.info(f"✅ Remarksデータ保存完了: {remarks_saved_count}件")
             
             # 5. ConvexPoolHistoryテーブルをクリア
-            if not self.clear_convex_pool_history_table():
+            delete_keys = [
+                {'pool_id': item.get('pool_id'), 'timestamp': item.get('timestamp')}
+                for item in yesterday_items
+                if item.get('pool_id') and item.get('timestamp')
+            ]
+            if not self.clear_convex_pool_history_table(delete_keys):
                 self.logger.error("❌ ConvexPoolHistoryテーブルのクリアに失敗しました")
                 return False
             
@@ -2338,25 +2342,31 @@ class ConvexEC2Complete:
         
         return ohlc_data
     
-    def clear_convex_pool_history_table(self) -> bool:
-        """ConvexPoolHistoryテーブルをクリア"""
+    def clear_convex_pool_history_table(self, delete_keys: Optional[List[Dict[str, Any]]] = None) -> bool:
+        """ConvexPoolHistoryテーブルをクリア（指定があればそのキーのみ削除）"""
         try:
             if 'ConvexPoolHistory' not in self.tables:
                 self.logger.error("❌ ConvexPoolHistoryテーブルに接続できません")
                 return False
-            
-            # 全データをスキャン
-            all_items = self.db_scan_items('ConvexPoolHistory')
-            
-            if not all_items:
-                self.logger.info("📊 ConvexPoolHistoryテーブルは既に空です")
+
+            if delete_keys is None:
+                # 全データをスキャン
+                all_items = self.db_scan_items('ConvexPoolHistory')
+
+                if not all_items:
+                    self.logger.info("📊 ConvexPoolHistoryテーブルは既に空です")
+                    return True
+
+                delete_keys = [
+                    {'pool_id': item['pool_id'], 'timestamp': item['timestamp']}
+                    for item in all_items
+                    if item.get('pool_id') and item.get('timestamp')
+                ]
+
+            if not delete_keys:
+                self.logger.info("📊 ConvexPoolHistoryテーブルの削除対象がありません")
                 return True
-            
-            delete_keys = [
-                {'pool_id': item['pool_id'], 'timestamp': item['timestamp']}
-                for item in all_items
-                if item.get('pool_id') and item.get('timestamp')
-            ]
+
             deleted_count = self.db_delete_items('ConvexPoolHistory', delete_keys)
             
             self.logger.info(f"✅ ConvexPoolHistoryテーブルをクリアしました: {deleted_count}件削除")

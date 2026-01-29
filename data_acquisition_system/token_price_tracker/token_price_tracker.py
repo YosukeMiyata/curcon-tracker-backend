@@ -405,7 +405,7 @@ class TokenPriceTracker:
         except Exception as e:
             self.logger.error(f"❌ データ取得エラー: {e}")
             return []
-    
+
     def normalize_token_symbol(self, token):
         """トークンシンボルを正規化（特殊文字を除去）"""
         if not token:
