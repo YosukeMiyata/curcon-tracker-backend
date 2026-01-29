@@ -301,5 +301,6 @@
   "OETH​+ARM-WETH-stETH": "factory-stable-ng-641",
   "sdUSD​+sfrxUSD": "factory-stable-ng-648",
   "USDC​+savUSD": "factory-stable-ng-655",
-  "WBTC​+cbBTC​+hemiBTC": "factory-stable-ng-625"
+  "WBTC​+cbBTC​+hemiBTC": "factory-stable-ng-625",
+  "YB​+yYB": "factory-stable-ng-651"
 }
