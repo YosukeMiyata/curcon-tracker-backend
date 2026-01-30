@@ -266,14 +266,12 @@ class TokenOHLCAggregator:
             
             # 昨日の日時範囲を計算（JST）
             now_jst = datetime.now(self.JST)
-            yesterday_start = (now_jst - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            yesterday_start = (now_jst - timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             yesterday_end = yesterday_start + timedelta(days=1)
             
-            # ISO形式のタイムスタンプに変換
-            yesterday_start_iso = yesterday_start.isoformat()
-            yesterday_end_iso = yesterday_end.isoformat()
-            
-            self.logger.info(f"📅 対象期間: {yesterday_start_iso} ～ {yesterday_end_iso}")
+            self.logger.info(f"📅 対象期間(JST): {yesterday_start.isoformat()} ～ {yesterday_end.isoformat()}")
             
             # 全データを取得
             all_items = self.db_scan_items("TokenPriceHistory")
@@ -281,9 +279,18 @@ class TokenOHLCAggregator:
             # 昨日のデータのみにフィルタリング
             yesterday_items = []
             for item in all_items:
-                timestamp = item.get('timestamp', '')
-                if timestamp >= yesterday_start_iso and timestamp < yesterday_end_iso:
-                    yesterday_items.append(item)
+                timestamp_str = item.get('timestamp', '')
+                if not timestamp_str:
+                    continue
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    timestamp_jst = timestamp.astimezone(self.JST)
+                    if yesterday_start <= timestamp_jst < yesterday_end:
+                        yesterday_items.append(item)
+                except (ValueError, TypeError):
+                    continue
             
             self.logger.info(f"✅ {len(yesterday_items)}件のデータを取得しました")
             return yesterday_items
@@ -399,38 +406,46 @@ class TokenOHLCAggregator:
             return False
     
     def clear_price_history_table_except_midnight(self):
-        """TokenPriceHistoryテーブルをクリア（深夜00:00のデータは保持）"""
+        """TokenPriceHistoryテーブルをクリア（昨日分のみ削除）"""
         try:
-            self.logger.info("🗑️ TokenPriceHistoryテーブルをクリア中（深夜00:00のデータは保持）...")
+            self.logger.info("🗑️ TokenPriceHistoryテーブルをクリア中（昨日分のみ削除）...")
             
-            # 今日の深夜00:00のタイムスタンプを計算
+            # 昨日の日時範囲を計算（JST）
             now_jst = datetime.now(self.JST)
-            today_midnight = now_jst.replace(hour=0, minute=0, second=0, microsecond=0)
-            midnight_iso = today_midnight.isoformat()
+            yesterday_start = (now_jst - timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            yesterday_end = yesterday_start + timedelta(days=1)
             
-            self.logger.info(f"📅 保持するデータ: {midnight_iso} 以降")
+            self.logger.info(
+                f"📅 削除対象期間(JST): {yesterday_start.isoformat()} ～ {yesterday_end.isoformat()}"
+            )
             
             # 全データを取得
             all_items = self.db_scan_items("TokenPriceHistory")
             
-            # 深夜00:00以降のデータは保持し、それ以前のデータを削除
+            # 昨日分のみ削除
             deleted_count = 0
             kept_count = 0
             failed_count = 0
             
             delete_keys = []
             for item in all_items:
-                timestamp = item.get('timestamp', '')
-                
-                # 深夜00:00以降のデータは保持
-                if timestamp >= midnight_iso:
+                timestamp_str = item.get('timestamp', '')
+                if not timestamp_str:
                     kept_count += 1
                     continue
-                
-                # 深夜00:00以前のデータを削除
+
                 try:
-                    delete_keys.append({'token': item['token'], 'timestamp': item['timestamp']})
-                    
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    timestamp_jst = timestamp.astimezone(self.JST)
+
+                    if yesterday_start <= timestamp_jst < yesterday_end:
+                        delete_keys.append({'token': item['token'], 'timestamp': item['timestamp']})
+                    else:
+                        kept_count += 1
                 except Exception as e:
                     self.logger.error(f"❌ 削除エラー {item.get('token')}: {e}")
                     failed_count += 1
