@@ -16,6 +16,7 @@ import logging
 import signal
 import subprocess
 import fcntl
+import base64
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -216,6 +217,13 @@ class ConvexEC2Complete:
             if not SUPABASE_AVAILABLE:
                 self.logger.error("❌ supabase パッケージが見つかりません")
                 return False
+            role = self._get_supabase_key_role(supabase_key)
+            if role and role != "service_role":
+                self.logger.error(
+                    "❌ SUPABASE_SERVICE_ROLE_KEY が service_role ではありません。"
+                    f"現在のrole: {role}。正しい service_role key を設定してください。"
+                )
+                return self.setup_aws()
             return self.setup_supabase(supabase_url, supabase_key)
 
         return self.setup_aws()
@@ -239,6 +247,20 @@ class ConvexEC2Complete:
         except Exception as e:
             self.logger.error(f"❌ Supabase接続エラー: {e}")
             return False
+
+    def _get_supabase_key_role(self, supabase_key: str) -> Optional[str]:
+        """Supabase JWTのroleを取得（検証なし）"""
+        try:
+            parts = supabase_key.split(".")
+            if len(parts) != 3:
+                return None
+            payload = parts[1]
+            padding = "=" * (-len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(payload + padding).decode("utf-8")
+            data = json.loads(decoded)
+            return data.get("role")
+        except Exception:
+            return None
 
     def _supabase_table_map(self):
         """DynamoDB属性名 -> Supabaseカラム名のマッピング"""
