@@ -1,0 +1,5 @@
+# token_price_tracker と Slack テスト用の最小依存関係
+# playwright 等の重い依存を除く
+requests>=2.31.0
+python-dotenv>=1.0.0
+supabase>=2.0.0

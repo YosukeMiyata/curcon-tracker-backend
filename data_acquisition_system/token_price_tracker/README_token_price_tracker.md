@@ -24,6 +24,7 @@ ConvexPoolHistoryテーブルからプール構成トークンを抽出し、Cur
 1. **ConvexPoolHistoryからトークン抽出**
    - ConvexPoolHistoryテーブルから全プールデータを取得
    - プール名からトークンを抽出
+   - **ConvexPoolHistoryが空の場合**（例: Convex Scraper未実行）: ファイルAが存在しなければ、pool_latest → manual_pool_mapping.json → ConvexPoolOHLCDaily の順でフォールバックしてトークン抽出
 
 2. **ファイルAの更新**
    - ファイルAから既存のトークンを読み込み
@@ -80,9 +81,36 @@ ConvexPoolHistoryテーブルからプール構成トークンを抽出し、Cur
 
 追跡対象トークンのリストを保存するファイルです。
 
-- **パス**: `/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/tracked_tokens.json`
+### 用途
+
+- **定期実行時**: ConvexPoolHistoryから抽出したトークンとマージし、新規トークンを追加
+- **フォールバック時**: ConvexPoolHistoryが空の場合、pool_latest または ConvexPoolOHLCDaily からトークンを抽出して新規作成
+
+### 使い方
+
+| 実行環境 | ファイルの有無 | 動作 |
+|----------|----------------|------|
+| **EC2/ローカル** | 存在する | 既存トークンとConvexPoolHistoryの新規トークンをマージして更新 |
+| **EC2/ローカル** | 存在しない | ConvexPoolHistoryから抽出して新規作成 |
+| **GitHub Actions** | 毎回存在しない | ConvexPoolHistoryから抽出して新規作成。Historyが空の場合は pool_latest → manual_pool_mapping.json → ConvexPoolOHLCDaily の順でフォールバック |
+
+### ファイル形式
+
+- **パス**: `/home/ubuntu/curcon-tracker/data_acquisition_system/token_price_tracker/tracked_tokens.json`（EC2）  
+  または `data_acquisition_system/token_price_tracker/tracked_tokens.json`（GitHub Actions / ローカル）
 - **形式**: JSON
-- **内容**:
+- **内容（新形式）**:
+  ```json
+  {
+    "generated_at": "2025-01-20T10:00:00+09:00",
+    "total_tokens": 106,
+    "tokens": {
+      "CRV": { "symbol": "CRV", "pool_count": 5, "pools": ["pool1", "pool2"], "factory_ids": ["123"], "price": 0.33 },
+      "CVX": { "symbol": "CVX", "pool_count": 3, "pools": ["pool1"], "factory_ids": ["123"], "price": 2.5 }
+    }
+  }
+  ```
+- **内容（旧形式・互換）**:
   ```json
   {
     "generated_at": "2025-01-20T10:00:00+09:00",
@@ -91,16 +119,31 @@ ConvexPoolHistoryテーブルからプール構成トークンを抽出し、Cur
   }
   ```
 
-## 使用方法
-
-### 1. 初回セットアップ（ファイルAの初期化）
+### 初回セットアップ（手動）
 
 ```bash
 # ConvexPoolOHLCDailyからトークンを抽出してファイルAを初期化
 python3 token_price_tracker.py --init
 ```
 
-このコマンドは初回のみ実行します。ConvexPoolOHLCDailyテーブルからトークンを抽出し、`tracked_tokens.json`（ファイルA）に保存します。
+このコマンドは初回のみ実行します。生成された `tracked_tokens.json` をリポジトリにコミットしておくと、GitHub Actions 実行時に ConvexPoolHistory が空でも追跡を継続できます（任意）。
+
+### tracked_tokens.json の定期更新タイミング
+
+| タイミング | 推奨度 | 理由 |
+|------------|--------|------|
+| **Convex Scraper 実行後** | ◎ | 新規プールが ConvexPoolHistory に追加された直後。Token Price Tracker の定期実行（毎時00分）で自動マージされるため、通常は不要 |
+| **manual_pool_mapping.json 更新後** | ◎ | 人力対応表に新規プールを追加した場合、次回の Token Price Tracker 実行で ConvexPoolHistory から検出されマージされる。History が空の場合は manual_pool_mapping からフォールバックされる |
+| **月1回の手動 `--init`** | △ | 運用安定後は不要。ConvexPoolOHLCDaily の構成が大きく変わった場合のみ検討 |
+| **リポジトリにコミット** | ◎ | 初回セットアップ後、`tracked_tokens.json` をコミットしておくと、GitHub Actions の fresh 環境でもフォールバック時に確実にトークン一覧を利用できる |
+
+**結論**: 通常は **Token Price Tracker の定期実行に任せる** で十分。ConvexPoolHistory から新規トークンが自動検出・マージされる。手動更新は、初回セットアップ時や `tracked_tokens.json` をリポジトリに含めたい場合のみ。
+
+## 使用方法
+
+### 1. 初回セットアップ（ファイルAの初期化）
+
+上記「初回セットアップ（手動）」を参照。
 
 ### 2. テスト実行
 ```bash

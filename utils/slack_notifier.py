@@ -45,9 +45,8 @@ class SlackNotifier:
             else:
                 load_dotenv(override=False)
         
-        # Webhook URLを取得（引数 > 環境変数 > デフォルト）
-        self.webhook_url = webhook_url or os.getenv('SLACK_WEBHOOK_URL') or \
-            'https://hooks.slack.com/services/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'
+        # Webhook URLを取得（引数 > 環境変数）。.env に SLACK_WEBHOOK_URL を設定すること
+        self.webhook_url = webhook_url or os.getenv('SLACK_WEBHOOK_URL')
         
         # ログ設定
         self.logger = logging.getLogger(__name__)
@@ -76,6 +75,10 @@ class SlackNotifier:
         Returns:
             送信成功時True、失敗時False
         """
+        if not self.webhook_url:
+            self.logger.warning("Slack Webhook URLが設定されていません。.env に SLACK_WEBHOOK_URL を設定してください。")
+            return False
+
         try:
             # 色の設定（Slackの色コード）
             color_map = {

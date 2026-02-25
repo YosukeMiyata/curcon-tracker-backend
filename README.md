@@ -48,6 +48,10 @@ cd curcon-tracker-backend
 pip install -r requirements.txt
 ```
 
+**ローカル実行時の環境変数**: `.env.local` が存在する場合、`.env` より優先して読み込まれます（Supabase 等のローカル用設定に便利）。
+
+**ModuleNotFoundError が出る場合**: `python` と `pip` で異なる Python が使われている可能性があります。`pip install -r requirements.txt` でインストールした Python で実行するか、`./scripts/run_with_deps.sh python <スクリプト>` を試してください。
+
 ## 🔐 環境変数
 ```bash
 # Supabase

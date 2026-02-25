@@ -303,5 +303,10 @@
   "USDC​+savUSD": "factory-stable-ng-655",
   "WBTC​+cbBTC​+hemiBTC": "factory-stable-ng-625",
   "YB​+yYB": "factory-stable-ng-651",
-  "YB​+sdYB": "factory-stable-ng-624"
+  "YB​+sdYB": "factory-stable-ng-624",
+  "frxUSD​+OUSD": "factory-stable-ng-584",
+  "crvUSD​+PYUSD": "factory-v2-348",
+  "fxUSD​+USDC​+USDaf​+BOLD": "factory-stable-ng-546",
+  "ynRWAx​+OUSD": "factory-stable-ng-663",
+  "OUSD​+MUSD": "factory-stable-ng-681"
 }

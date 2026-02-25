@@ -5,6 +5,20 @@
 # 追跡対象トークンリスト（tracked_tokens.json）に追跡対象トークンを保存
 # =====================================
 
+# 環境変数: .env.local を優先（ローカル開発用）、なければ .env
+import os as _os
+_project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+try:
+    from dotenv import load_dotenv
+    _env_local = _os.path.join(_project_root, '.env.local')
+    _env = _os.path.join(_project_root, '.env')
+    if _os.path.exists(_env):
+        load_dotenv(_env)
+    if _os.path.exists(_env_local):
+        load_dotenv(_env_local)  # .env.local で上書き（ローカル用の Supabase 等）
+except ImportError:
+    pass
+
 import boto3
 import json
 import requests
@@ -56,6 +70,8 @@ class TokenPriceTracker:
 
         # 追跡対象トークンリストファイルのパス
         self.tracked_tokens_file = str(self.base_dir / "tracked_tokens.json")
+        # manual_pool_mapping.jsonのパス（data_acquisition_system直下）
+        self.manual_mapping_file = Path(__file__).resolve().parent.parent / "manual_pool_mapping.json"
         
         # ログ設定
         self.setup_logging()
@@ -140,6 +156,14 @@ class TokenPriceTracker:
                     "created_at": "created_at",
                 },
             },
+            "PoolLatest": {
+                "table": "pool_latest",
+                "columns": {
+                    "pool_id": "pool_id",
+                    "Pool": "pool_name",
+                    "factory_id": "factory_id",
+                },
+            },
             "ConvexPoolHistory": {
                 "table": "convex_pool_history",
                 "columns": {
@@ -222,6 +246,10 @@ class TokenPriceTracker:
                     break
                 offset += page_size
             return items
+
+        # DynamoDBモードではPoolLatestは未対応（Supabase専用）
+        if table_name == "PoolLatest":
+            return []
 
         table = self.convex_pool_ohlc_daily_table if table_name == "ConvexPoolOHLCDaily" else self.convex_pool_history_table
         response = table.scan()
@@ -404,6 +432,19 @@ class TokenPriceTracker:
             
         except Exception as e:
             self.logger.error(f"❌ データ取得エラー: {e}")
+            return []
+
+    def get_all_pool_data_from_pool_latest(self):
+        """pool_latestから全プールデータを取得（Supabaseのみ）"""
+        try:
+            self.logger.info("📊 pool_latestからデータを取得中...")
+            items = self.db_scan_items("PoolLatest")
+            
+            self.logger.info(f"✅ {len(items)}件のデータを取得しました")
+            return items
+            
+        except Exception as e:
+            self.logger.error(f"❌ pool_latest取得エラー: {e}")
             return []
 
     def normalize_token_symbol(self, token):
@@ -606,6 +647,89 @@ class TokenPriceTracker:
                     error=e
                 )
             return False
+
+    def initialize_tracked_tokens_from_pool_latest(self):
+        """pool_latestからトークンを抽出して追跡対象トークンリストに保存（フォールバック用）"""
+        try:
+            self.logger.info("🚀 pool_latestからトークン抽出開始")
+            
+            # pool_latestからデータを取得
+            items = self.get_all_pool_data_from_pool_latest()
+            if not items:
+                self.logger.warning("⚠️ pool_latestにデータがありません")
+                return False
+            
+            # トークンを抽出（詳細情報を含む辞書を返す）
+            token_info = self.extract_tokens_from_items(items)
+            
+            if not token_info:
+                self.logger.warning("⚠️ トークンが抽出できませんでした")
+                return False
+            
+            # 追跡対象トークンリストに保存
+            if self.save_tracked_tokens(token_info):
+                self.logger.info(f"✅ {len(token_info)}個のトークンを追跡対象トークンリストに保存しました（pool_latestから）")
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            error_msg = f"❌ pool_latestからのトークン抽出エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
+            return False
+
+    def initialize_tracked_tokens_from_manual_mapping(self):
+        """manual_pool_mapping.jsonからトークンを抽出して追跡対象トークンリストに保存（フォールバック用）"""
+        try:
+            self.logger.info("🚀 manual_pool_mapping.jsonからトークン抽出開始")
+            
+            if not self.manual_mapping_file.exists():
+                self.logger.warning("⚠️ manual_pool_mapping.jsonが存在しません")
+                return False
+            
+            with open(self.manual_mapping_file, 'r', encoding='utf-8') as f:
+                mapping = json.load(f)
+            
+            if not mapping:
+                self.logger.warning("⚠️ manual_pool_mapping.jsonが空です")
+                return False
+            
+            # プール名→factory_idの形式をextract_tokens_from_items用の形式に変換
+            items = [
+                {"Pool": pool_name, "factory_id": str(factory_id)}
+                for pool_name, factory_id in mapping.items()
+            ]
+            
+            # トークンを抽出（詳細情報を含む辞書を返す）
+            token_info = self.extract_tokens_from_items(items)
+            
+            if not token_info:
+                self.logger.warning("⚠️ トークンが抽出できませんでした")
+                return False
+            
+            # 追跡対象トークンリストに保存
+            if self.save_tracked_tokens(token_info):
+                self.logger.info(f"✅ {len(token_info)}個のトークンを追跡対象トークンリストに保存しました（manual_pool_mapping.jsonから）")
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            error_msg = f"❌ manual_pool_mapping.jsonからのトークン抽出エラー: {e}"
+            self.logger.error(error_msg)
+            if self.slack_notifier:
+                self.slack_notifier.notify_error(
+                    message=error_msg,
+                    system_name="Token Price Tracker",
+                    error=e
+                )
+            return False
     
     def update_tracked_tokens_from_history(self):
         """ConvexPoolHistoryからトークンを抽出し、追跡対象トークンリストを更新"""
@@ -623,6 +747,22 @@ class TokenPriceTracker:
             items = self.get_all_pool_data_from_history()
             if not items:
                 self.logger.warning("⚠️ ConvexPoolHistoryにデータがありません")
+                # フォールバック: 既存トークンがない場合、pool_latest → manual_pool_mapping → ConvexPoolOHLCDaily の順で試行
+                if not existing_token_info:
+                    # 1. pool_latestが空でなければそこからトークン抽出
+                    pool_latest_items = self.get_all_pool_data_from_pool_latest()
+                    if pool_latest_items:
+                        self.logger.info("📊 pool_latestからフォールバックでトークン抽出を試行...")
+                        if self.initialize_tracked_tokens_from_pool_latest():
+                            return self.load_tracked_tokens()
+                    # 2. manual_pool_mapping.jsonが空でなければそこからトークン抽出
+                    self.logger.info("📊 manual_pool_mapping.jsonからフォールバックでトークン抽出を試行...")
+                    if self.initialize_tracked_tokens_from_manual_mapping():
+                        return self.load_tracked_tokens()
+                    # 3. ConvexPoolOHLCDailyからトークン抽出（最後の手段）
+                    self.logger.info("📊 ConvexPoolOHLCDailyからフォールバックでトークン抽出を試行...")
+                    if self.initialize_tracked_tokens_from_ohlc_daily():
+                        return self.load_tracked_tokens()
                 return existing_token_info
             
             # トークンを抽出（詳細情報を含む辞書を返す）

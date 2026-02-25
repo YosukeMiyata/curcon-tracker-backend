@@ -1,0 +1,2055 @@
+{
+  "generated_at": "2026-02-25T22:22:35.200124+09:00",
+  "total_tokens": 141,
+  "tokens": {
+    "3Crv": {
+      "symbol": "3Crv",
+      "pool_count": 3,
+      "pools": [
+        "mUSD​+3Crv",
+        "MIM​+3Crv",
+        "FRAX​+3Crv"
+      ],
+      "factory_ids": [
+        "22",
+        "40",
+        "34"
+      ],
+      "price": 1.0398882933262685
+    },
+    "ALCX": {
+      "symbol": "ALCX",
+      "pool_count": 1,
+      "pools": [
+        "ALCX​+FRAXBP"
+      ],
+      "factory_ids": [
+        "factory-crypto-96"
+      ],
+      "price": 4.602094071804295
+    },
+    "ALD": {
+      "symbol": "ALD",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+ALD"
+      ],
+      "factory_ids": [
+        "factory-crypto-209"
+      ],
+      "price": 0.01661181622234143
+    },
+    "ARM-WETH-stETH": {
+      "symbol": "ARM-WETH-stETH",
+      "pool_count": 1,
+      "pools": [
+        "OETH​+ARM-WETH-stETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-641"
+      ],
+      "price": 2069.1807377837285
+    },
+    "ASF": {
+      "symbol": "ASF",
+      "pool_count": 1,
+      "pools": [
+        "WETH​+ASF"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-89"
+      ],
+      "price": 0.04760242054547766
+    },
+    "BADGER": {
+      "symbol": "BADGER",
+      "pool_count": 1,
+      "pools": [
+        "BADGER​+FRAXBP"
+      ],
+      "factory_ids": [
+        "factory-crypto-101"
+      ],
+      "price": 0.34614070149656173
+    },
+    "BOBO": {
+      "symbol": "BOBO",
+      "pool_count": 1,
+      "pools": [
+        "BOBO​+WETH"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-111"
+      ],
+      "price": 8.146235875611269e-08
+    },
+    "BOLD": {
+      "symbol": "BOLD",
+      "pool_count": 3,
+      "pools": [
+        "BOLD​+USDC",
+        "USDFI​+USDaf​+ebUSD​+BOLD",
+        "fxUSD​+USDC​+USDaf​+BOLD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-352",
+        "factory-stable-ng-564"
+      ],
+      "price": 1.0049161991343003
+    },
+    "BobrCRV": {
+      "symbol": "BobrCRV",
+      "pool_count": 1,
+      "pools": [
+        "BobrCRV​+CRV​+crvUSD"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-26"
+      ],
+      "price": 40.050310262261135
+    },
+    "CJPY": {
+      "symbol": "CJPY",
+      "pool_count": 2,
+      "pools": [
+        "WETH​+CJPY",
+        "crvUSD​+CJPY"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-5",
+        "factory-twocrypto-4"
+      ],
+      "price": 0.005000314302655266
+    },
+    "CLEV": {
+      "symbol": "CLEV",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+CLEV"
+      ],
+      "factory_ids": [
+        "factory-crypto-140"
+      ],
+      "price": 2.190506044876309
+    },
+    "COIL": {
+      "symbol": "COIL",
+      "pool_count": 1,
+      "pools": [
+        "COIL​+FRAXBP"
+      ],
+      "factory_ids": [
+        "factory-crypto-236"
+      ],
+      "price": 0.1404138484197869
+    },
+    "CRV": {
+      "symbol": "CRV",
+      "pool_count": 6,
+      "pools": [
+        "CRV​+sdCRV",
+        "CRV​+yCRV",
+        "crvUSD (CRV collateral)",
+        "crvUSD​+WETH​+CRV",
+        "BobrCRV​+CRV​+crvUSD",
+        "CRV​+cvxCRV"
+      ],
+      "factory_ids": [
+        "factory-v2-300",
+        "factory-crypto-216",
+        "oneway-3",
+        "factory-tricrypto-4",
+        "factory-tricrypto-26",
+        "factory-v2-283"
+      ],
+      "price": 0.24778949027957295
+    },
+    "CTR": {
+      "symbol": "CTR",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+CTR"
+      ],
+      "factory_ids": [
+        "factory-crypto-151"
+      ],
+      "price": 0.08141747693139881
+    },
+    "CVX": {
+      "symbol": "CVX",
+      "pool_count": 4,
+      "pools": [
+        "CVX​+afCVX",
+        "WETH​+CVX",
+        "CVX​+clevCVX",
+        "frxETH​+CVX"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-214",
+        "crypto-4",
+        "factory-v2-209",
+        "factory-crypto-234"
+      ],
+      "price": 1.8683704394541905
+    },
+    "CVX1": {
+      "symbol": "CVX1",
+      "pool_count": 1,
+      "pools": [
+        "CVX1​+cvgCVX"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-186"
+      ],
+      "price": 1.8814857718134925
+    },
+    "DBR": {
+      "symbol": "DBR",
+      "pool_count": 1,
+      "pools": [
+        "DOLA​+DBR​+INV"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-18"
+      ],
+      "price": 0.044516185896988164
+    },
+    "DOLA": {
+      "symbol": "DOLA",
+      "pool_count": 7,
+      "pools": [
+        "DOLA​+crvUSD",
+        "DOLA​+DBR​+INV",
+        "DOLA​+wstUSR",
+        "DOLA​+USR",
+        "DOLA​+sUSDS",
+        "DOLA​+FRAXBP",
+        "DOLA​+sUSDe"
+      ],
+      "factory_ids": [
+        "factory-crvusd-12",
+        "factory-tricrypto-18",
+        "factory-stable-ng-568",
+        "factory-stable-ng-337",
+        "factory-stable-ng-299",
+        "factory-v2-176",
+        "factory-stable-ng-298"
+      ],
+      "price": 0.9950994622449991
+    },
+    "DYDX": {
+      "symbol": "DYDX",
+      "pool_count": 1,
+      "pools": [
+        "DYDX​+ETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-10"
+      ],
+      "price": 0.02288416607807907
+    },
+    "ETH": {
+      "symbol": "ETH",
+      "pool_count": 19,
+      "pools": [
+        "ETH​+FXS",
+        "ETH+​+WETH",
+        "eCFX​+ETH",
+        "ETH​+ETHx",
+        "DYDX​+ETH",
+        "ETH​+ankrETH",
+        "ETH​+YFI",
+        "ETH​+cbETH",
+        "ETH​+xETH",
+        "GEAR​+ETH",
+        "ETH​+ALD",
+        "ETH​+CLEV",
+        "ETH​+FXN",
+        "ETH​+rETH",
+        "ETH​+PAL",
+        "ETH​+CTR",
+        "ETH​+LDO",
+        "ETH​+KP3R",
+        "ETH​+frxETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-3",
+        "factory-stable-ng-482",
+        "factory-crypto-235",
+        "factory-v2-338",
+        "factory-crypto-10",
+        "2",
+        "factory-crypto-8",
+        "factory-crypto-91",
+        "factory-crypto-302",
+        "factory-crypto-192",
+        "factory-crypto-209",
+        "factory-crypto-140",
+        "factory-crypto-311",
+        "36",
+        "factory-crypto-38",
+        "factory-crypto-151",
+        "factory-crypto-204",
+        "factory-crypto-39",
+        "45"
+      ],
+      "price": 1945.7645450053424
+    },
+    "ETH+": {
+      "symbol": "ETH+",
+      "pool_count": 1,
+      "pools": [
+        "dgnETH​+ETH+"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-174"
+      ],
+      "price": 2088.2566947050937
+    },
+    "ETHx": {
+      "symbol": "ETHx",
+      "pool_count": 2,
+      "pools": [
+        "ETH​+ETHx",
+        "ETHx​+WETH"
+      ],
+      "factory_ids": [
+        "factory-v2-338",
+        "factory-v2-319"
+      ],
+      "price": 2069.8702603438005
+    },
+    "EURA": {
+      "symbol": "EURA",
+      "pool_count": 2,
+      "pools": [
+        "EURA​+EURC",
+        "EURA​+EURT​+EURS"
+      ],
+      "factory_ids": [
+        "factory-v2-164",
+        "factory-v2-66"
+      ],
+      "price": 1.1435249892663302
+    },
+    "EURC": {
+      "symbol": "EURC",
+      "pool_count": 1,
+      "pools": [
+        "EURA​+EURC"
+      ],
+      "factory_ids": [
+        "factory-v2-164"
+      ],
+      "price": 1.1595270729947007
+    },
+    "EURS": {
+      "symbol": "EURS",
+      "pool_count": 1,
+      "pools": [
+        "EURA​+EURT​+EURS"
+      ],
+      "factory_ids": [
+        "factory-v2-66"
+      ],
+      "price": 1.237040326039063
+    },
+    "EURT": {
+      "symbol": "EURT",
+      "pool_count": 1,
+      "pools": [
+        "EURA​+EURT​+EURS"
+      ],
+      "factory_ids": [
+        "factory-v2-66"
+      ],
+      "price": 0.06808668537249966
+    },
+    "FRAX": {
+      "symbol": "FRAX",
+      "pool_count": 4,
+      "pools": [
+        "FRAX​+crvUSD",
+        "DOLA​+FRAXPYUSD",
+        "FRAX​+USDC",
+        "FRAX​+3Crv"
+      ],
+      "factory_ids": [
+        "factory-crvusd-4",
+        "factory-stable-ng-96",
+        "44",
+        "34"
+      ],
+      "price": 0.9922222202230756
+    },
+    "FRAXBP": {
+      "symbol": "FRAXBP",
+      "pool_count": 10,
+      "pools": [
+        "eUSD​+FRAXBP",
+        "STG​+FRAXBP",
+        "GRAI​+FRAXBP",
+        "sUSD​+FRAXBP",
+        "alUSD​+FRAXBP",
+        "DOLA​+FRAXBP",
+        "msUSD​+FRAXBP",
+        "ALCX​+FRAXBP",
+        "COIL​+FRAXBP",
+        "BADGER​+FRAXBP"
+      ],
+      "factory_ids": [
+        "factory-v2-277",
+        "factory-crypto-161",
+        "factory-v2-308",
+        "factory-v2-136",
+        "factory-v2-147",
+        "factory-v2-176",
+        "factory-v2-251",
+        "factory-crypto-96",
+        "factory-crypto-236",
+        "factory-crypto-101"
+      ],
+      "price": 1.0096861615948496
+    },
+    "FXN": {
+      "symbol": "FXN",
+      "pool_count": 3,
+      "pools": [
+        "ETH​+FXN",
+        "FXN​+cvxFXN",
+        "FXN​+sdFXN"
+      ],
+      "factory_ids": [
+        "factory-crypto-311",
+        "factory-v2-358",
+        "factory-v2-359"
+      ],
+      "price": 16.623699917617113
+    },
+    "FXS": {
+      "symbol": "FXS",
+      "pool_count": 2,
+      "pools": [
+        "ETH​+FXS",
+        "FXS​+cvxFXS"
+      ],
+      "factory_ids": [
+        "factory-crypto-3",
+        "factory-crypto-18"
+      ],
+      "price": 0.6503273130127644
+    },
+    "GEAR": {
+      "symbol": "GEAR",
+      "pool_count": 1,
+      "pools": [
+        "GEAR​+ETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-192"
+      ],
+      "price": 0.0003779212266780181
+    },
+    "GHO": {
+      "symbol": "GHO",
+      "pool_count": 2,
+      "pools": [
+        "GHO​+cbBTC​+WETH",
+        "GHO​+crvUSD"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-47",
+        "factory-crvusd-8"
+      ],
+      "price": 1.0000617948220467
+    },
+    "GRAI": {
+      "symbol": "GRAI",
+      "pool_count": 1,
+      "pools": [
+        "GRAI​+FRAXBP"
+      ],
+      "factory_ids": [
+        "factory-v2-308"
+      ],
+      "price": 0.9335960657389288
+    },
+    "INV": {
+      "symbol": "INV",
+      "pool_count": 2,
+      "pools": [
+        "DOLA​+DBR​+INV",
+        "WETH​+INV"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-18",
+        "factory-twocrypto-101"
+      ],
+      "price": 17.87726208389057
+    },
+    "IQ": {
+      "symbol": "IQ",
+      "pool_count": 1,
+      "pools": [
+        "frxETH​+IQ"
+      ],
+      "factory_ids": [
+        "factory-crypto-309"
+      ],
+      "price": 0.0011580551406790507
+    },
+    "KP3R": {
+      "symbol": "KP3R",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+KP3R"
+      ],
+      "factory_ids": [
+        "factory-crypto-39"
+      ],
+      "price": 1.5803789696797943
+    },
+    "LDO": {
+      "symbol": "LDO",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+LDO"
+      ],
+      "factory_ids": [
+        "factory-crypto-204"
+      ],
+      "price": 0.3068370635216185
+    },
+    "MIM": {
+      "symbol": "MIM",
+      "pool_count": 1,
+      "pools": [
+        "MIM​+3Crv"
+      ],
+      "factory_ids": [
+        "40"
+      ],
+      "price": 0.9889861676239391
+    },
+    "MUSD": {
+      "symbol": "MUSD",
+      "pool_count": 3,
+      "pools": [
+        "MUSD​+sUSDe",
+        "MUSD​+crv2pool",
+        "OUSD​+MUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-519",
+        "factory-stable-ng-518"
+      ],
+      "price": 0.9946821595520718
+    },
+    "OETH": {
+      "symbol": "OETH",
+      "pool_count": 5,
+      "pools": [
+        "frxETH​+OETH",
+        "OETH​+WETH",
+        "OETH​+ARM-WETH-stETH",
+        "msETH​+OETH",
+        "OGN​+OUSD​+OETH"
+      ],
+      "factory_ids": [
+        "factory-v2-353",
+        "factory-stable-ng-402",
+        "factory-stable-ng-641",
+        "factory-stable-ng-374",
+        "factory-tricrypto-52"
+      ],
+      "price": 1931.038985378734
+    },
+    "OGN": {
+      "symbol": "OGN",
+      "pool_count": 1,
+      "pools": [
+        "OGN​+OUSD​+OETH"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-52"
+      ],
+      "price": 0.020789099705414222
+    },
+    "OUSD": {
+      "symbol": "OUSD",
+      "pool_count": 4,
+      "pools": [
+        "OGN​+OUSD​+OETH",
+        "frxUSD​+OUSD",
+        "ynRWAx​+OUSD",
+        "OUSD​+MUSD"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-52"
+      ],
+      "price": 1.0001392885971963
+    },
+    "PAL": {
+      "symbol": "PAL",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+PAL"
+      ],
+      "factory_ids": [
+        "factory-crypto-38"
+      ],
+      "price": 0.019291495403565322
+    },
+    "PAXG": {
+      "symbol": "PAXG",
+      "pool_count": 1,
+      "pools": [
+        "XAUt​+PAXG"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-397"
+      ],
+      "price": 4960.175778385785
+    },
+    "PYUSD": {
+      "symbol": "PYUSD",
+      "pool_count": 4,
+      "pools": [
+        "PYUSD​+crvUSD",
+        "PYUSD​+USDC",
+        "DOLA​+FRAXPYUSD",
+        "crvUSD​+PYUSD"
+      ],
+      "factory_ids": [
+        "factory-v2-351",
+        "factory-stable-ng-43",
+        "factory-stable-ng-96"
+      ],
+      "price": 1.0000889058532212
+    },
+    "RLUSD": {
+      "symbol": "RLUSD",
+      "pool_count": 1,
+      "pools": [
+        "USDC​+RLUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-327"
+      ],
+      "price": 0.9882587022120379
+    },
+    "ROME": {
+      "symbol": "ROME",
+      "pool_count": 1,
+      "pools": [
+        "ROME​+USDT"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-237"
+      ],
+      "price": 1.0100599802547032
+    },
+    "RSUP": {
+      "symbol": "RSUP",
+      "pool_count": 1,
+      "pools": [
+        "WETH​+RSUP"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-119"
+      ],
+      "price": 0.17810430975463867
+    },
+    "RZR": {
+      "symbol": "RZR",
+      "pool_count": 1,
+      "pools": [
+        "RZR​+frxETH​+scrvUSD"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-75"
+      ],
+      "price": 0.679551756949079
+    },
+    "SDT": {
+      "symbol": "SDT",
+      "pool_count": 2,
+      "pools": [
+        "SDT​+cvgSDT",
+        "WETH​+SDT"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-81",
+        "factory-twocrypto-51"
+      ],
+      "price": 0.15626038671921438
+    },
+    "STG": {
+      "symbol": "STG",
+      "pool_count": 1,
+      "pools": [
+        "STG​+FRAXBP"
+      ],
+      "factory_ids": [
+        "factory-crypto-161"
+      ],
+      "price": 0.13165286868648626
+    },
+    "T": {
+      "symbol": "T",
+      "pool_count": 1,
+      "pools": [
+        "WETH​+T"
+      ],
+      "factory_ids": [
+        "crypto-7"
+      ],
+      "price": 0.0007608339793601549
+    },
+    "USD3": {
+      "symbol": "USD3",
+      "pool_count": 4,
+      "pools": [
+        "USD3​+rgUSD",
+        "USD3​+scrvUSD",
+        "USD3​+sUSDe",
+        "USD3​+sUSDS"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-27",
+        "factory-stable-ng-307",
+        "factory-stable-ng-231",
+        "factory-stable-ng-503"
+      ],
+      "price": 1.086512020287901
+    },
+    "USDC": {
+      "symbol": "USDC",
+      "pool_count": 19,
+      "pools": [
+        "ebUSD​+USDC",
+        "USPD​+USDC",
+        "USDC​+jUSD",
+        "USDC​+fxUSD",
+        "PYUSD​+USDC",
+        "BOLD​+USDC",
+        "eUSD​+USDC",
+        "deUSD​+USDC",
+        "USDC​+RLUSD",
+        "USDC​+USDT",
+        "USDC​+crvUSD",
+        "iUSD​+USDC",
+        "FRAX​+USDC",
+        "yUSD​+USDC",
+        "USDC​+USDU",
+        "USDC​+USDf",
+        "USDC​+savUSD",
+        "USDC​+WBTC​+WETH",
+        "fxUSD​+USDC​+USDaf​+BOLD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-487",
+        "factory-stable-ng-609",
+        "factory-stable-ng-447",
+        "factory-stable-ng-193",
+        "factory-stable-ng-43",
+        "factory-stable-ng-352",
+        "factory-stable-ng-167",
+        "factory-stable-ng-207",
+        "factory-stable-ng-327",
+        "9",
+        "factory-crvusd-0",
+        "factory-stable-ng-465",
+        "44",
+        "factory-stable-ng-441",
+        "factory-stable-ng-506",
+        "factory-stable-ng-391",
+        "factory-stable-ng-655",
+        "factory-tricrypto-0"
+      ],
+      "price": 1
+    },
+    "USDFI": {
+      "symbol": "USDFI",
+      "pool_count": 2,
+      "pools": [
+        "USDFI​+USDaf​+ebUSD​+BOLD",
+        "USDFI​+frxUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-564",
+        "factory-stable-ng-527"
+      ],
+      "price": 1.0265553238455394
+    },
+    "USDN": {
+      "symbol": "USDN",
+      "pool_count": 1,
+      "pools": [
+        "fxUSD​+USDN"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-387"
+      ],
+      "price": 0.023852083976718615
+    },
+    "USDT": {
+      "symbol": "USDT",
+      "pool_count": 7,
+      "pools": [
+        "USDT​+USDe",
+        "deUSD​+USDT",
+        "USDT​+crvUSD",
+        "USDC​+USDT",
+        "ROME​+USDT",
+        "USDT​+tacUSD",
+        "USDT​+WBTC​+WETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-365",
+        "factory-stable-ng-217",
+        "factory-crvusd-1",
+        "9",
+        "factory-stable-ng-237",
+        "factory-stable-ng-445",
+        "38"
+      ],
+      "price": 0.9998349473859102
+    },
+    "USDU": {
+      "symbol": "USDU",
+      "pool_count": 1,
+      "pools": [
+        "USDC​+USDU"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-506"
+      ],
+      "price": 0.995977
+    },
+    "USDaf": {
+      "symbol": "USDaf",
+      "pool_count": 4,
+      "pools": [
+        "USDFI​+USDaf​+ebUSD​+BOLD",
+        "USDaf​+frxUSD",
+        "scrvUSD​+USDaf",
+        "fxUSD​+USDC​+USDaf​+BOLD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-564",
+        "factory-stable-ng-583",
+        "factory-stable-ng-516"
+      ],
+      "price": 0
+    },
+    "USDe": {
+      "symbol": "USDe",
+      "pool_count": 5,
+      "pools": [
+        "crvUSD (USDe collateral)",
+        "sfrxUSD​+USDe",
+        "USDT​+USDe",
+        "sUSD​+USDe",
+        "frxUSD​+USDe"
+      ],
+      "factory_ids": [
+        "oneway-14",
+        "factory-stable-ng-336",
+        "factory-stable-ng-365",
+        "factory-stable-ng-346"
+      ],
+      "price": 0.9992423632369705
+    },
+    "USDf": {
+      "symbol": "USDf",
+      "pool_count": 2,
+      "pools": [
+        "frxUSD​+USDf",
+        "USDC​+USDf"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-485",
+        "factory-stable-ng-391"
+      ],
+      "price": 0.9973661225988633
+    },
+    "USPD": {
+      "symbol": "USPD",
+      "pool_count": 1,
+      "pools": [
+        "USPD​+USDC"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-609"
+      ],
+      "price": 0
+    },
+    "USR": {
+      "symbol": "USR",
+      "pool_count": 1,
+      "pools": [
+        "DOLA​+USR"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-337"
+      ],
+      "price": 0.9997076149493762
+    },
+    "VSP": {
+      "symbol": "VSP",
+      "pool_count": 1,
+      "pools": [
+        "VSP​+WETH"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-199"
+      ],
+      "price": 0.08047175655874081
+    },
+    "VUSD": {
+      "symbol": "VUSD",
+      "pool_count": 1,
+      "pools": [
+        "crvUSD​+VUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-212"
+      ],
+      "price": 1.0012289680536248
+    },
+    "WACME": {
+      "symbol": "WACME",
+      "pool_count": 1,
+      "pools": [
+        "WACME​+frxETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-238"
+      ],
+      "price": 0.00033716715410320495
+    },
+    "WBTC": {
+      "symbol": "WBTC",
+      "pool_count": 6,
+      "pools": [
+        "crvUSD (WBTC collateral)",
+        "cbBTC​+WBTC",
+        "WBTC​+cbBTC​+hemiBTC",
+        "WBTC​+uniBTC",
+        "USDT​+WBTC​+WETH",
+        "USDC​+WBTC​+WETH"
+      ],
+      "factory_ids": [
+        "oneway-9",
+        "factory-stable-ng-264",
+        "factory-stable-ng-625",
+        "factory-stable-ng-494",
+        "38",
+        "factory-tricrypto-0"
+      ],
+      "price": 65983.93212162415
+    },
+    "WETH": {
+      "symbol": "WETH",
+      "pool_count": 26,
+      "pools": [
+        "uniETH​+WETH",
+        "WETH​+RSUP",
+        "crvUSD​+WETH​+CRV",
+        "OETH​+WETH",
+        "crvUSD (WETH collateral)",
+        "GHO​+cbBTC​+WETH",
+        "ETH+​+WETH",
+        "ynETHx​+WETH",
+        "msETH​+WETH",
+        "WETH​+ASF",
+        "WETH​+CVX",
+        "WETH​+T",
+        "VSP​+WETH",
+        "WETH​+SDT",
+        "BOBO​+WETH",
+        "WETH​+rswETH",
+        "WETH​+pxETH",
+        "WETH​+CJPY",
+        "WETH​+stETH",
+        "WETH​+INV",
+        "ETHx​+WETH",
+        "WETH​+tacETH",
+        "USDT​+WBTC​+WETH",
+        "USDC​+WBTC​+WETH",
+        "WETH​+rETH",
+        "alETH​+WETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-71",
+        "factory-twocrypto-119",
+        "factory-tricrypto-4",
+        "factory-stable-ng-402",
+        "oneway-1",
+        "factory-tricrypto-47",
+        "factory-stable-ng-482",
+        "factory-stable-ng-303",
+        "factory-v2-331",
+        "factory-twocrypto-89",
+        "crypto-4",
+        "crypto-7",
+        "factory-twocrypto-199",
+        "factory-twocrypto-51",
+        "factory-twocrypto-111",
+        "factory-stable-ng-77",
+        "factory-stable-ng-31",
+        "factory-twocrypto-5",
+        "factory-v2-117",
+        "factory-twocrypto-101",
+        "factory-v2-319",
+        "factory-stable-ng-428",
+        "38",
+        "factory-tricrypto-0",
+        "factory-stable-ng-52",
+        "factory-stable-ng-36"
+      ],
+      "price": 1947.0561274369084
+    },
+    "XAUt": {
+      "symbol": "XAUt",
+      "pool_count": 1,
+      "pools": [
+        "XAUt​+PAXG"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-397"
+      ],
+      "price": 4926.9962894923265
+    },
+    "YB": {
+      "symbol": "YB",
+      "pool_count": 3,
+      "pools": [
+        "YB​+sdYB",
+        "YB​+yYB",
+        "crvUSD​+YB"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-624",
+        "factory-stable-ng-651",
+        "factory-twocrypto-271"
+      ],
+      "price": 0.16140098149814672
+    },
+    "YFI": {
+      "symbol": "YFI",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+YFI"
+      ],
+      "factory_ids": [
+        "factory-crypto-8"
+      ],
+      "price": 2712.8746019672426
+    },
+    "ZCHF": {
+      "symbol": "ZCHF",
+      "pool_count": 1,
+      "pools": [
+        "crvUSD​+ZCHF"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-274"
+      ],
+      "price": 1.2923565068762275
+    },
+    "afCVX": {
+      "symbol": "afCVX",
+      "pool_count": 1,
+      "pools": [
+        "CVX​+afCVX"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-214"
+      ],
+      "price": 2.2644812084067385
+    },
+    "alETH": {
+      "symbol": "alETH",
+      "pool_count": 3,
+      "pools": [
+        "alETH​+pxETH",
+        "alETH​+frxETH",
+        "alETH​+WETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-268",
+        "factory-v2-253",
+        "factory-stable-ng-36"
+      ],
+      "price": 1808.4260487190609
+    },
+    "alUSD": {
+      "symbol": "alUSD",
+      "pool_count": 2,
+      "pools": [
+        "alUSD​+FRAXBP",
+        "sDOLA​+alUSD"
+      ],
+      "factory_ids": [
+        "factory-v2-147",
+        "factory-stable-ng-320"
+      ],
+      "price": 0.9862385788071043
+    },
+    "ankrETH": {
+      "symbol": "ankrETH",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+ankrETH"
+      ],
+      "factory_ids": [
+        "2"
+      ],
+      "price": 2354.73374282643
+    },
+    "btcUSD": {
+      "symbol": "btcUSD",
+      "pool_count": 1,
+      "pools": [
+        "fxUSD​+rUSD​+btcUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-204"
+      ],
+      "price": 0.9968156287954401
+    },
+    "cbBTC": {
+      "symbol": "cbBTC",
+      "pool_count": 3,
+      "pools": [
+        "GHO​+cbBTC​+WETH",
+        "cbBTC​+WBTC",
+        "WBTC​+cbBTC​+hemiBTC"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-47",
+        "factory-stable-ng-264",
+        "factory-stable-ng-625"
+      ],
+      "price": 66129.21228251114
+    },
+    "cbETH": {
+      "symbol": "cbETH",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+cbETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-91"
+      ],
+      "price": 2116.8379098282803
+    },
+    "clevCVX": {
+      "symbol": "clevCVX",
+      "pool_count": 1,
+      "pools": [
+        "CVX​+clevCVX"
+      ],
+      "factory_ids": [
+        "factory-v2-209"
+      ],
+      "price": 1.3626288662866157
+    },
+    "crv2pool": {
+      "symbol": "crv2pool",
+      "pool_count": 1,
+      "pools": [
+        "MUSD​+crv2pool"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-518"
+      ],
+      "price": 1.020737064122863
+    },
+    "crvUSD": {
+      "symbol": "crvUSD",
+      "pool_count": 31,
+      "pools": [
+        "crvUSD (USDe collateral)",
+        "pmUSD​+crvUSD",
+        "crvUSD (ynETHx collateral)",
+        "crvUSD (sreUSD collateral)",
+        "crvUSD (sUSDe collateral)",
+        "crvUSD (pufETH collateral)",
+        "crvUSD (CRV collateral)",
+        "PYUSD​+crvUSD",
+        "FRAX​+crvUSD",
+        "crvUSD​+WETH​+CRV",
+        "crvUSD (WETH collateral)",
+        "BobrCRV​+CRV​+crvUSD",
+        "crvUSD (tBTC collateral)",
+        "crvUSD​+tBTC​+wstETH",
+        "crvUSD​+sUSDe",
+        "DOLA​+crvUSD",
+        "crvUSD​+ZCHF",
+        "frxUSD​+crvUSD",
+        "crvUSD (fxSAVE collateral)",
+        "USDT​+crvUSD",
+        "crvUSD (WBTC collateral)",
+        "crvUSD​+VUSD",
+        "USDC​+crvUSD",
+        "crvUSD​+YB",
+        "crvUSD (sUSDS collateral)",
+        "crvUSD (wstETH collateral)",
+        "crvUSD (sfrxUSD collateral)",
+        "crvUSD​+CJPY",
+        "crvUSD (sDOLA collateral)",
+        "GHO​+crvUSD",
+        "crvUSD​+PYUSD"
+      ],
+      "factory_ids": [
+        "oneway-14",
+        "factory-stable-ng-652",
+        "oneway-29",
+        "oneway-41",
+        "oneway-11",
+        "oneway-10",
+        "oneway-3",
+        "factory-v2-351",
+        "factory-crvusd-4",
+        "factory-tricrypto-4",
+        "oneway-1",
+        "factory-tricrypto-26",
+        "oneway-2",
+        "factory-tricrypto-2",
+        "factory-stable-ng-169",
+        "factory-crvusd-12",
+        "factory-twocrypto-274",
+        "factory-stable-ng-510",
+        "oneway-39",
+        "factory-crvusd-1",
+        "oneway-9",
+        "factory-stable-ng-212",
+        "factory-crvusd-0",
+        "factory-twocrypto-271",
+        "oneway-32",
+        "oneway-13",
+        "oneway-28",
+        "factory-twocrypto-4",
+        "oneway-17",
+        "factory-crvusd-8"
+      ],
+      "price": 0.9969890067315208
+    },
+    "cvgCVX": {
+      "symbol": "cvgCVX",
+      "pool_count": 1,
+      "pools": [
+        "CVX1​+cvgCVX"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-186"
+      ],
+      "price": 1.6888089826407944
+    },
+    "cvgSDT": {
+      "symbol": "cvgSDT",
+      "pool_count": 1,
+      "pools": [
+        "SDT​+cvgSDT"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-81"
+      ],
+      "price": 0.14493128028012323
+    },
+    "cvxCRV": {
+      "symbol": "cvxCRV",
+      "pool_count": 1,
+      "pools": [
+        "CRV​+cvxCRV"
+      ],
+      "factory_ids": [
+        "factory-v2-283"
+      ],
+      "price": 0.11291592251415017
+    },
+    "cvxFXN": {
+      "symbol": "cvxFXN",
+      "pool_count": 1,
+      "pools": [
+        "FXN​+cvxFXN"
+      ],
+      "factory_ids": [
+        "factory-v2-358"
+      ],
+      "price": 15.716488481464069
+    },
+    "cvxFXS": {
+      "symbol": "cvxFXS",
+      "pool_count": 1,
+      "pools": [
+        "FXS​+cvxFXS"
+      ],
+      "factory_ids": [
+        "factory-crypto-18"
+      ],
+      "price": 0.20603117862069253
+    },
+    "deUSD": {
+      "symbol": "deUSD",
+      "pool_count": 4,
+      "pools": [
+        "deUSD​+USDT",
+        "deUSD​+USDC",
+        "frxUSD​+deUSD",
+        "sdeUSD​+deUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-217",
+        "factory-stable-ng-207",
+        "factory-stable-ng-585",
+        "factory-stable-ng-488"
+      ],
+      "price": 0.001251
+    },
+    "dgnETH": {
+      "symbol": "dgnETH",
+      "pool_count": 1,
+      "pools": [
+        "dgnETH​+ETH+"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-174"
+      ],
+      "price": 1942.4659576834817
+    },
+    "eCFX": {
+      "symbol": "eCFX",
+      "pool_count": 1,
+      "pools": [
+        "eCFX​+ETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-235"
+      ],
+      "price": 0.050401751356521196
+    },
+    "eUSD": {
+      "symbol": "eUSD",
+      "pool_count": 2,
+      "pools": [
+        "eUSD​+FRAXBP",
+        "eUSD​+USDC"
+      ],
+      "factory_ids": [
+        "factory-v2-277",
+        "factory-stable-ng-167"
+      ],
+      "price": 1.0004789915466714
+    },
+    "ebUSD": {
+      "symbol": "ebUSD",
+      "pool_count": 2,
+      "pools": [
+        "ebUSD​+USDC",
+        "USDFI​+USDaf​+ebUSD​+BOLD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-487",
+        "factory-stable-ng-564"
+      ],
+      "price": 0.9925782726276801
+    },
+    "frxETH": {
+      "symbol": "frxETH",
+      "pool_count": 11,
+      "pools": [
+        "frxETH​+OETH",
+        "frxETH​+IQ",
+        "WACME​+frxETH",
+        "rETH​+frxETH",
+        "RZR​+frxETH​+scrvUSD",
+        "stETH​+frxETH",
+        "frxETH​+CVX",
+        "uniETH​+frxETH",
+        "msETH​+frxETH",
+        "alETH​+frxETH",
+        "ETH​+frxETH"
+      ],
+      "factory_ids": [
+        "factory-v2-353",
+        "factory-crypto-309",
+        "factory-crypto-238",
+        "factory-crypto-218",
+        "factory-tricrypto-75",
+        "factory-v2-274",
+        "factory-crypto-234",
+        "factory-stable-ng-499",
+        "factory-v2-290",
+        "factory-v2-253",
+        "45"
+      ],
+      "price": 1925.297774568024
+    },
+    "frxUSD": {
+      "symbol": "frxUSD",
+      "pool_count": 11,
+      "pools": [
+        "pmUSD​+frxUSD",
+        "frxUSD​+msUSD",
+        "frxUSD​+sUSDS",
+        "frxUSD​+crvUSD",
+        "frxUSD​+USDf",
+        "sfrxUSD​+frxUSD",
+        "frxUSD​+USDe",
+        "frxUSD​+deUSD",
+        "USDaf​+frxUSD",
+        "USDFI​+frxUSD",
+        "frxUSD​+OUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-653",
+        "factory-stable-ng-599",
+        "factory-stable-ng-342",
+        "factory-stable-ng-510",
+        "factory-stable-ng-485",
+        "factory-stable-ng-539",
+        "factory-stable-ng-336",
+        "factory-stable-ng-585",
+        "factory-stable-ng-583",
+        "factory-stable-ng-527"
+      ],
+      "price": 1.000193801507875
+    },
+    "fxSAVE": {
+      "symbol": "fxSAVE",
+      "pool_count": 2,
+      "pools": [
+        "crvUSD (fxSAVE collateral)",
+        "fxSAVE​+scrvUSD"
+      ],
+      "factory_ids": [
+        "oneway-39",
+        "factory-stable-ng-475"
+      ],
+      "price": 1.0862219532557609
+    },
+    "fxUSD": {
+      "symbol": "fxUSD",
+      "pool_count": 6,
+      "pools": [
+        "USDC​+fxUSD",
+        "fxUSD​+rUSD​+btcUSD",
+        "reUSD​+fxUSD",
+        "fxUSD​+USDN",
+        "msUSD​+fxUSD",
+        "fxUSD​+USDC​+USDaf​+BOLD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-193",
+        "factory-stable-ng-204",
+        "factory-stable-ng-414",
+        "factory-stable-ng-387",
+        "factory-stable-ng-512"
+      ],
+      "price": 1.0003274300213651
+    },
+    "hemiBTC": {
+      "symbol": "hemiBTC",
+      "pool_count": 1,
+      "pools": [
+        "WBTC​+cbBTC​+hemiBTC"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-625"
+      ],
+      "price": 64280.96404563323
+    },
+    "iUSD": {
+      "symbol": "iUSD",
+      "pool_count": 1,
+      "pools": [
+        "iUSD​+USDC"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-465"
+      ],
+      "price": 1.000521732549772
+    },
+    "jUSD": {
+      "symbol": "jUSD",
+      "pool_count": 1,
+      "pools": [
+        "USDC​+jUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-447"
+      ],
+      "price": 1.048335
+    },
+    "litUSD": {
+      "symbol": "litUSD",
+      "pool_count": 1,
+      "pools": [
+        "litUSD​+sfrxUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-529"
+      ],
+      "price": 0.9990584946268136
+    },
+    "mUSD": {
+      "symbol": "mUSD",
+      "pool_count": 1,
+      "pools": [
+        "mUSD​+3Crv"
+      ],
+      "factory_ids": [
+        "22"
+      ],
+      "price": 1.0003509738097196
+    },
+    "msETH": {
+      "symbol": "msETH",
+      "pool_count": 3,
+      "pools": [
+        "msETH​+WETH",
+        "msETH​+OETH",
+        "msETH​+frxETH"
+      ],
+      "factory_ids": [
+        "factory-v2-331",
+        "factory-stable-ng-374",
+        "factory-v2-290"
+      ],
+      "price": 1930.5403682852468
+    },
+    "msUSD": {
+      "symbol": "msUSD",
+      "pool_count": 3,
+      "pools": [
+        "frxUSD​+msUSD",
+        "msUSD​+FRAXBP",
+        "msUSD​+fxUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-599",
+        "factory-v2-251",
+        "factory-stable-ng-512"
+      ],
+      "price": 0.9958725453932613
+    },
+    "osETH": {
+      "symbol": "osETH",
+      "pool_count": 1,
+      "pools": [
+        "osETH​+rETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-15"
+      ],
+      "price": 2032.3280738034323
+    },
+    "pmUSD": {
+      "symbol": "pmUSD",
+      "pool_count": 2,
+      "pools": [
+        "pmUSD​+crvUSD",
+        "pmUSD​+frxUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-652",
+        "factory-stable-ng-653"
+      ],
+      "price": 0.9964070191454053
+    },
+    "pufETH": {
+      "symbol": "pufETH",
+      "pool_count": 2,
+      "pools": [
+        "pufETH​+wstETH",
+        "crvUSD (pufETH collateral)"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-83",
+        "oneway-10"
+      ],
+      "price": 2049.027313181198
+    },
+    "pxETH": {
+      "symbol": "pxETH",
+      "pool_count": 3,
+      "pools": [
+        "alETH​+pxETH",
+        "pxETH​+stETH",
+        "WETH​+pxETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-268",
+        "factory-stable-ng-30",
+        "factory-stable-ng-31"
+      ],
+      "price": 1934.4396998069915
+    },
+    "rETH": {
+      "symbol": "rETH",
+      "pool_count": 5,
+      "pools": [
+        "osETH​+rETH",
+        "rETH​+frxETH",
+        "ETH​+rETH",
+        "wstETH​+rETH​+sfrxETH",
+        "WETH​+rETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-15",
+        "factory-crypto-218",
+        "36",
+        "factory-tricrypto-14",
+        "factory-stable-ng-52"
+      ],
+      "price": 2181.3910759945566
+    },
+    "rUSD": {
+      "symbol": "rUSD",
+      "pool_count": 1,
+      "pools": [
+        "fxUSD​+rUSD​+btcUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-204"
+      ],
+      "price": 0.9880979921526093
+    },
+    "reUSD": {
+      "symbol": "reUSD",
+      "pool_count": 4,
+      "pools": [
+        "reUSD​+sfrxUSD",
+        "reUSD​+fxUSD",
+        "reUSD​+sDOLA",
+        "reUSD​+scrvUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-393",
+        "factory-stable-ng-414",
+        "factory-stable-ng-413",
+        "factory-stable-ng-392"
+      ],
+      "price": 0.9863961877188498
+    },
+    "rgUSD": {
+      "symbol": "rgUSD",
+      "pool_count": 1,
+      "pools": [
+        "USD3​+rgUSD"
+      ],
+      "factory_ids": [
+        "factory-twocrypto-27"
+      ],
+      "price": 0.8947599410427723
+    },
+    "rswETH": {
+      "symbol": "rswETH",
+      "pool_count": 2,
+      "pools": [
+        "WETH​+rswETH",
+        "weETH​+rswETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-77",
+        "factory-stable-ng-80"
+      ],
+      "price": 2003.4323555744234
+    },
+    "sDOLA": {
+      "symbol": "sDOLA",
+      "pool_count": 4,
+      "pools": [
+        "sDOLA​+alUSD",
+        "reUSD​+sDOLA",
+        "crvUSD (sDOLA collateral)",
+        "scrvUSD​+sDOLA"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-320",
+        "factory-stable-ng-413",
+        "oneway-17",
+        "factory-stable-ng-297"
+      ],
+      "price": 1.1822759502357072
+    },
+    "sUSD": {
+      "symbol": "sUSD",
+      "pool_count": 3,
+      "pools": [
+        "sUSD​+FRAXBP",
+        "sUSD​+USDe",
+        "sUSD​+sUSDe"
+      ],
+      "factory_ids": [
+        "factory-v2-136",
+        "factory-stable-ng-346",
+        "factory-stable-ng-371"
+      ],
+      "price": 0.8162302931626475
+    },
+    "sUSDS": {
+      "symbol": "sUSDS",
+      "pool_count": 5,
+      "pools": [
+        "frxUSD​+sUSDS",
+        "DOLA​+sUSDS",
+        "crvUSD (sUSDS collateral)",
+        "scrvUSD​+sUSDS",
+        "USD3​+sUSDS"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-342",
+        "factory-stable-ng-299",
+        "oneway-32",
+        "factory-stable-ng-306",
+        "factory-stable-ng-503"
+      ],
+      "price": 1.0878393340533452
+    },
+    "sUSDe": {
+      "symbol": "sUSDe",
+      "pool_count": 7,
+      "pools": [
+        "crvUSD (sUSDe collateral)",
+        "scrvUSD​+sUSDe",
+        "MUSD​+sUSDe",
+        "crvUSD​+sUSDe",
+        "sUSD​+sUSDe",
+        "USD3​+sUSDe",
+        "DOLA​+sUSDe"
+      ],
+      "factory_ids": [
+        "oneway-11",
+        "factory-stable-ng-296",
+        "factory-stable-ng-519",
+        "factory-stable-ng-169",
+        "factory-stable-ng-371",
+        "factory-stable-ng-231",
+        "factory-stable-ng-298"
+      ],
+      "price": 1.2190700922871487
+    },
+    "savUSD": {
+      "symbol": "savUSD",
+      "pool_count": 1,
+      "pools": [
+        "USDC​+savUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-655"
+      ],
+      "price": 1.1501735642417157
+    },
+    "scrvUSD": {
+      "symbol": "scrvUSD",
+      "pool_count": 9,
+      "pools": [
+        "scrvUSD​+sUSDe",
+        "sfrxUSD​+scrvUSD",
+        "fxSAVE​+scrvUSD",
+        "USD3​+scrvUSD",
+        "RZR​+frxETH​+scrvUSD",
+        "scrvUSD​+sUSDS",
+        "scrvUSD​+sDOLA",
+        "scrvUSD​+USDaf",
+        "reUSD​+scrvUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-296",
+        "factory-stable-ng-344",
+        "factory-stable-ng-475",
+        "factory-stable-ng-307",
+        "factory-tricrypto-75",
+        "factory-stable-ng-306",
+        "factory-stable-ng-297",
+        "factory-stable-ng-516",
+        "factory-stable-ng-392"
+      ],
+      "price": 1.087913180467675
+    },
+    "sdCRV": {
+      "symbol": "sdCRV",
+      "pool_count": 1,
+      "pools": [
+        "CRV​+sdCRV"
+      ],
+      "factory_ids": [
+        "factory-v2-300"
+      ],
+      "price": 0.16763303048296135
+    },
+    "sdFXN": {
+      "symbol": "sdFXN",
+      "pool_count": 1,
+      "pools": [
+        "FXN​+sdFXN"
+      ],
+      "factory_ids": [
+        "factory-v2-359"
+      ],
+      "price": 15.31724793966028
+    },
+    "sdUSD": {
+      "symbol": "sdUSD",
+      "pool_count": 1,
+      "pools": [
+        "sdUSD​+sfrxUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-648"
+      ],
+      "price": 1.0050694015697665
+    },
+    "sdYB": {
+      "symbol": "sdYB",
+      "pool_count": 1,
+      "pools": [
+        "YB​+sdYB"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-624"
+      ],
+      "price": 0.15578801977838597
+    },
+    "sdeUSD": {
+      "symbol": "sdeUSD",
+      "pool_count": 1,
+      "pools": [
+        "sdeUSD​+deUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-488"
+      ],
+      "price": 0.03487015748162301
+    },
+    "sfrxETH": {
+      "symbol": "sfrxETH",
+      "pool_count": 1,
+      "pools": [
+        "wstETH​+rETH​+sfrxETH"
+      ],
+      "factory_ids": [
+        "factory-tricrypto-14"
+      ],
+      "price": 2189.1907247844383
+    },
+    "sfrxUSD": {
+      "symbol": "sfrxUSD",
+      "pool_count": 7,
+      "pools": [
+        "sfrxUSD​+USDe",
+        "sfrxUSD​+scrvUSD",
+        "litUSD​+sfrxUSD",
+        "sdUSD​+sfrxUSD",
+        "reUSD​+sfrxUSD",
+        "sfrxUSD​+frxUSD",
+        "crvUSD (sfrxUSD collateral)"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-336",
+        "factory-stable-ng-344",
+        "factory-stable-ng-529",
+        "factory-stable-ng-648",
+        "factory-stable-ng-393",
+        "factory-stable-ng-539",
+        "oneway-28"
+      ],
+      "price": 1.183710003619493
+    },
+    "sreUSD": {
+      "symbol": "sreUSD",
+      "pool_count": 1,
+      "pools": [
+        "crvUSD (sreUSD collateral)"
+      ],
+      "factory_ids": [
+        "oneway-41"
+      ],
+      "price": null
+    },
+    "stETH": {
+      "symbol": "stETH",
+      "pool_count": 3,
+      "pools": [
+        "pxETH​+stETH",
+        "stETH​+frxETH",
+        "WETH​+stETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-30",
+        "factory-v2-274",
+        "factory-v2-117"
+      ],
+      "price": 1941.0245023250122
+    },
+    "tBTC": {
+      "symbol": "tBTC",
+      "pool_count": 2,
+      "pools": [
+        "crvUSD (tBTC collateral)",
+        "crvUSD​+tBTC​+wstETH"
+      ],
+      "factory_ids": [
+        "oneway-2",
+        "factory-tricrypto-2"
+      ],
+      "price": 66076.25815461417
+    },
+    "tacETH": {
+      "symbol": "tacETH",
+      "pool_count": 1,
+      "pools": [
+        "WETH​+tacETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-428"
+      ],
+      "price": 1896.338252823387
+    },
+    "tacUSD": {
+      "symbol": "tacUSD",
+      "pool_count": 1,
+      "pools": [
+        "USDT​+tacUSD"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-445"
+      ],
+      "price": 0.6953992035961639
+    },
+    "uniBTC": {
+      "symbol": "uniBTC",
+      "pool_count": 1,
+      "pools": [
+        "WBTC​+uniBTC"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-494"
+      ],
+      "price": 64917.888584974346
+    },
+    "uniETH": {
+      "symbol": "uniETH",
+      "pool_count": 2,
+      "pools": [
+        "uniETH​+WETH",
+        "uniETH​+frxETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-71",
+        "factory-stable-ng-499"
+      ],
+      "price": 2130.803995247936
+    },
+    "weETH": {
+      "symbol": "weETH",
+      "pool_count": 1,
+      "pools": [
+        "weETH​+rswETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-80"
+      ],
+      "price": 2123.1140400371314
+    },
+    "wstETH": {
+      "symbol": "wstETH",
+      "pool_count": 4,
+      "pools": [
+        "pufETH​+wstETH",
+        "crvUSD​+tBTC​+wstETH",
+        "crvUSD (wstETH collateral)",
+        "wstETH​+rETH​+sfrxETH"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-83",
+        "factory-tricrypto-2",
+        "oneway-13",
+        "factory-tricrypto-14"
+      ],
+      "price": 2380.801653817256
+    },
+    "wstUSR": {
+      "symbol": "wstUSR",
+      "pool_count": 1,
+      "pools": [
+        "DOLA​+wstUSR"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-568"
+      ],
+      "price": 1.1304802663264237
+    },
+    "xETH": {
+      "symbol": "xETH",
+      "pool_count": 1,
+      "pools": [
+        "ETH​+xETH"
+      ],
+      "factory_ids": [
+        "factory-crypto-302"
+      ],
+      "price": 1933.8149683597273
+    },
+    "yCRV": {
+      "symbol": "yCRV",
+      "pool_count": 1,
+      "pools": [
+        "CRV​+yCRV"
+      ],
+      "factory_ids": [
+        "factory-crypto-216"
+      ],
+      "price": 0.15859985211143945
+    },
+    "yUSD": {
+      "symbol": "yUSD",
+      "pool_count": 1,
+      "pools": [
+        "yUSD​+USDC"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-441"
+      ],
+      "price": 1.0783530436347668
+    },
+    "yYB": {
+      "symbol": "yYB",
+      "pool_count": 1,
+      "pools": [
+        "YB​+yYB"
+      ],
+      "factory_ids": [
+        "factory-stable-ng-651"
+      ],
+      "price": 0.15807133223800693
+    },
+    "ynETHx": {
+      "symbol": "ynETHx",
+      "pool_count": 2,
+      "pools": [
+        "crvUSD (ynETHx collateral)",
+        "ynETHx​+WETH"
+      ],
+      "factory_ids": [
+        "oneway-29",
+        "factory-stable-ng-303"
+      ],
+      "price": 2032.2673812601097
+    },
+    "ynRWAx": {
+      "symbol": "ynRWAx",
+      "pool_count": 1,
+      "pools": [
+        "ynRWAx​+OUSD"
+      ],
+      "factory_ids": [],
+      "price": 1.0390801756229462
+    }
+  }
+}
