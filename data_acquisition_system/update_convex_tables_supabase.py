@@ -107,11 +107,20 @@ def run():
             for row in rows_to_update:
                 pool_name = row.get("pool_name") or row.get("pool_id")
                 pool_id_type = row.get("pool_id_type")
-                if pool_id_type:
+                # 対応表のキーは "USDP​+crvUSD" 形式のため、pool_name を優先して検索する
+                # pool_id_type は "usdpcrvusd#current_vapr" 形式でマッチしない
+                if pool_name:
+                    search_name = pool_name
+                elif pool_id_type:
                     search_name = pool_id_type.split("#")[0] if "#" in str(pool_id_type) else pool_id_type
                 else:
-                    search_name = pool_name
-                factory_id = find_factory_id(manual_mapping, search_name or pool_name)
+                    search_name = row.get("pool_id")
+                factory_id = find_factory_id(manual_mapping, search_name)
+                if not factory_id and pool_name and pool_id_type:
+                    # pool_name で見つからなかった場合のみ pool_id_type の前半を試す
+                    fallback = pool_id_type.split("#")[0] if "#" in str(pool_id_type) else pool_id_type
+                    if fallback != search_name:
+                        factory_id = find_factory_id(manual_mapping, fallback)
                 if not factory_id:
                     continue
                 key_list = [c.strip() for c in key_cols.split(",")]
