@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from supabase import create_client
 
 load_dotenv()
+# ローカル用: .env.local があれば読み込む
+_env_local = Path(__file__).resolve().parent.parent / ".env.local"
+if _env_local.exists():
+    load_dotenv(_env_local)
 
 
 def run():

@@ -15,6 +15,10 @@ from dotenv import load_dotenv
 from supabase import create_client
 
 load_dotenv()
+# ローカル用: .env.local があれば読み込む（GitHub Actions では存在しない）
+_env_local = Path(__file__).resolve().parent.parent / ".env.local"
+if _env_local.exists():
+    load_dotenv(_env_local)
 
 # リポジトリルートを基準に manual_pool_mapping.json を読む（GitHub Actions でも動作）
 SCRIPT_DIR = Path(__file__).resolve().parent
