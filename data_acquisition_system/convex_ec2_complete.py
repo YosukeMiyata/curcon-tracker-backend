@@ -1364,9 +1364,12 @@ class ConvexEC2Complete:
             return None
 
     def _save_failed_matching(self, pool_name, token_symbols):
-        """マッチング失敗プールをJSONファイルに保存"""
+        """マッチング失敗プールを保存（Supabase時はDB、それ以外はJSONファイル）"""
         try:
-            # 既存の失敗プールデータを読み込み
+            if self.db_mode == "supabase" and self.supabase:
+                self._save_failed_matching_supabase(pool_name, token_symbols)
+                return
+            # 既存の失敗プールデータを読み込み（JSONファイル）
             failed_pools = {}
             if self.failed_matching_file.exists():
                 with open(self.failed_matching_file, 'r', encoding='utf-8') as f:
@@ -1397,37 +1400,79 @@ class ConvexEC2Complete:
             with open(self.failed_matching_file, 'w', encoding='utf-8') as f:
                 json.dump(failed_pools, f, ensure_ascii=False, indent=2)
             
-            # Slack通知を送信（新規エントリの場合、または失敗回数が5, 10, 20回などの閾値に達した場合）
-            if self.slack_notifier:
-                notification_thresholds = [1, 5, 10, 20, 50, 100]
-                should_notify = is_new_entry or new_failure_count in notification_thresholds
-                
-                if should_notify:
-                    jst_now = datetime.now(self.JST)
-                    timestamp = jst_now.strftime("%Y-%m-%d %H:%M:%S JST")
-                    
-                    message = f"factory_idマッチング失敗: {pool_name}\n"
-                    message += f"失敗回数: {new_failure_count}回\n"
-                    message += f"初回発見: {failed_pools[pool_name].get('first_seen', 'N/A')}\n"
-                    message += f"最終発見: {failed_pools[pool_name].get('last_seen', 'N/A')}\n"
-                    if token_symbols:
-                        message += f"トークンシンボル: {', '.join(token_symbols)}\n"
-                    message += f"\n対応方法:\n"
-                    message += f"1. manual_pool_mapping.jsonに対応表を追加\n"
-                    message += f"2. update_existing_convex_pool_metrics.pyを実行して既存データを更新\n"
-                    message += f"3. failed_pool_matching.jsonから該当エントリを削除"
-                    
-                    try:
-                        self.slack_notifier.notify_warning(
-                            message=message,
-                            system_name="Convex EC2 Complete"
-                        )
-                        self.logger.info(f"✅ Slack通知を送信しました: {pool_name} (失敗回数: {new_failure_count}回)")
-                    except Exception as e:
-                        self.logger.error(f"❌ Slack通知送信エラー: {e}")
-            
+            self._send_failed_matching_slack_notification(
+                pool_name, new_failure_count, failed_pools[pool_name], token_symbols, is_new_entry
+            )
         except Exception as e:
             self.logger.error(f"❌ 失敗プール保存エラー: {e}")
+
+    def _save_failed_matching_supabase(self, pool_name, token_symbols):
+        """Supabaseのconvex_failed_pool_matchingテーブルに保存"""
+        now_iso = datetime.now().isoformat()
+        try:
+            existing = self.supabase.table("convex_failed_pool_matching").select("*").eq(
+                "pool_name", pool_name
+            ).limit(1).execute()
+            rows = existing.data or []
+            if rows:
+                row = rows[0]
+                new_count = (row.get("failure_count") or 0) + 1
+                self.supabase.table("convex_failed_pool_matching").update({
+                    "last_seen": now_iso,
+                    "failure_count": new_count,
+                    "token_symbols": token_symbols if token_symbols else [],
+                    "updated_at": now_iso,
+                }).eq("pool_name", pool_name).execute()
+                new_failure_count = new_count
+                is_new_entry = False
+                record = {"first_seen": row.get("first_seen"), "last_seen": now_iso, "failure_count": new_count}
+            else:
+                self.supabase.table("convex_failed_pool_matching").insert({
+                    "pool_name": pool_name,
+                    "token_symbols": token_symbols if token_symbols else [],
+                    "first_seen": now_iso,
+                    "last_seen": now_iso,
+                    "failure_count": 1,
+                    "status": "pending",
+                }).execute()
+                new_failure_count = 1
+                is_new_entry = True
+                record = {"first_seen": now_iso, "last_seen": now_iso, "failure_count": 1}
+                self.logger.info(f"📝 マッチング失敗プールを記録(Supabase): {pool_name}")
+            self._send_failed_matching_slack_notification(
+                pool_name, new_failure_count, record, token_symbols, is_new_entry
+            )
+        except Exception as e:
+            self.logger.error(f"❌ 失敗プール保存エラー(Supabase): {e}")
+
+    def _send_failed_matching_slack_notification(self, pool_name, new_failure_count, record, token_symbols, is_new_entry):
+        """マッチング失敗のSlack通知を送信"""
+        if not self.slack_notifier:
+            return
+        notification_thresholds = [1, 5, 10, 20, 50, 100]
+        should_notify = is_new_entry or new_failure_count in notification_thresholds
+        if not should_notify:
+            return
+        jst_now = datetime.now(self.JST)
+        message = f"factory_idマッチング失敗: {pool_name}\n"
+        message += f"失敗回数: {new_failure_count}回\n"
+        message += f"初回発見: {record.get('first_seen', 'N/A')}\n"
+        message += f"最終発見: {record.get('last_seen', 'N/A')}\n"
+        if token_symbols:
+            message += f"トークンシンボル: {', '.join(token_symbols)}\n"
+        message += "\n対応方法:\n"
+        if self.db_mode == "supabase":
+            message += "1. manual_pool_mapping.jsonに対応表を追加してコミット・プッシュ\n"
+            message += "2. GitHub Actions の「Update Convex factory_id (Supabase)」ワークフローを手動実行\n"
+        else:
+            message += f"1. manual_pool_mapping.jsonに対応表を追加\n"
+            message += f"2. update_existing_convex_pool_metrics.pyを実行して既存データを更新\n"
+            message += f"3. failed_pool_matching.jsonから該当エントリを削除"
+        try:
+            self.slack_notifier.notify_warning(message=message, system_name="Convex EC2 Complete")
+            self.logger.info(f"✅ Slack通知を送信しました: {pool_name} (失敗回数: {new_failure_count}回)")
+        except Exception as e:
+            self.logger.error(f"❌ Slack通知送信エラー: {e}")
 
     def add_manual_mapping(self, pool_name, factory_id, description="", valid_until=None):
         """人力対応表に新しいマッピングを追加"""
@@ -1462,8 +1507,10 @@ class ConvexEC2Complete:
             return False
 
     def get_failed_matching_pools(self, status='pending'):
-        """マッチング失敗プールの一覧を取得"""
+        """マッチング失敗プールの一覧を取得（Supabase時はDB、それ以外はJSONファイル）"""
         try:
+            if self.db_mode == "supabase" and self.supabase:
+                return self._get_failed_matching_pools_supabase(status)
             if not self.failed_matching_file.exists():
                 return []
             
@@ -1481,6 +1528,29 @@ class ConvexEC2Complete:
             
         except Exception as e:
             self.logger.error(f"❌ 失敗プール取得エラー: {e}")
+            return []
+
+    def _get_failed_matching_pools_supabase(self, status='pending'):
+        """Supabaseのconvex_failed_pool_matchingから一覧取得"""
+        try:
+            response = self.supabase.table("convex_failed_pool_matching").select(
+                "*"
+            ).eq("status", status).execute()
+            rows = response.data or []
+            result = []
+            for row in rows:
+                rec = {
+                    'pool_name': row.get('pool_name'),
+                    'token_symbols': row.get('token_symbols') or [],
+                    'first_seen': row.get('first_seen'),
+                    'last_seen': row.get('last_seen'),
+                    'failure_count': row.get('failure_count', 0),
+                    'status': row.get('status', 'pending'),
+                }
+                result.append(rec)
+            return result
+        except Exception as e:
+            self.logger.error(f"❌ 失敗プール取得エラー(Supabase): {e}")
             return []
 
     def _normalize_symbol(self, symbol):

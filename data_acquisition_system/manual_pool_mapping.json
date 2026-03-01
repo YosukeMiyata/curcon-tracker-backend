@@ -308,5 +308,7 @@
   "crvUSD​+PYUSD": "factory-v2-348",
   "fxUSD​+USDC​+USDaf​+BOLD": "factory-stable-ng-546",
   "ynRWAx​+OUSD": "factory-stable-ng-663",
-  "OUSD​+MUSD": "factory-stable-ng-681"
+  "OUSD​+MUSD": "factory-stable-ng-681",
+  "USDP​+crvUSD": "factory-crvusd-2",
+  "FRAX​+PYUSD": "factory-stable-ng-28"
 }

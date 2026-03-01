@@ -63,6 +63,20 @@ create table if not exists convex_pool_remarks_history (
 create index if not exists idx_convex_pool_remarks_history_timestamp
   on convex_pool_remarks_history (timestamp desc);
 
+-- Convex failed pool matching (factory_id 未マッチのプール記録、GitHub Actions + Supabase 運用用)
+create table if not exists convex_failed_pool_matching (
+  pool_name text primary key,
+  token_symbols jsonb default '[]',
+  first_seen timestamptz,
+  last_seen timestamptz,
+  failure_count integer default 0,
+  status text default 'pending',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create index if not exists idx_convex_failed_pool_matching_status
+  on convex_failed_pool_matching (status);
+
 -- cvxCRV stake history
 create table if not exists cvx_crv_stake_history (
   stake text not null,
