@@ -311,5 +311,6 @@
   "OUSD​+MUSD": "factory-stable-ng-681",
   "USDP​+crvUSD": "factory-crvusd-2",
   "FRAX​+PYUSD": "factory-stable-ng-28",
-  "cUSDO​+USDC": "factory-stable-ng-335"
+  "cUSDO​+USDC": "factory-stable-ng-335",
+  "OUSD​+msUSD": "factory-stable-ng-688"
 }
