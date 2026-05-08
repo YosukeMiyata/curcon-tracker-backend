@@ -857,7 +857,7 @@ class TokenPriceTracker:
         """トークン価格データをTokenPriceHistoryテーブルに保存"""
         if not token_info:
             self.logger.warning("❌ トークン情報が見つかりません")
-            return
+            return 0
         
         jst_iso_timestamp = datetime.now(self.JST).isoformat()
         jst_created_at = datetime.now(self.JST).isoformat()
@@ -920,6 +920,7 @@ class TokenPriceTracker:
                 # 個別のトークン保存エラーはSlack通知しない（大量に発生する可能性があるため）
         
         self.logger.info(f"📊 保存完了: {saved_count}個成功, {failed_count}個失敗")
+        return saved_count
     
     def save_failed_tokens_to_file(self):
         """価格取得に失敗したトークンをJSONファイルに保存"""
@@ -982,7 +983,16 @@ class TokenPriceTracker:
                 return False
             
             # 3. 価格データをDBに保存
-            self.save_token_prices_to_db(token_info)
+            saved_count = self.save_token_prices_to_db(token_info)
+            if saved_count == 0:
+                error_msg = "❌ TokenPriceHistoryに保存できた価格データがありません"
+                self.logger.error(error_msg)
+                if self.slack_notifier:
+                    self.slack_notifier.notify_error(
+                        message=error_msg,
+                        system_name="Token Price Tracker"
+                    )
+                return False
             
             # 4. 失敗したトークンをファイルに保存
             self.save_failed_tokens_to_file()

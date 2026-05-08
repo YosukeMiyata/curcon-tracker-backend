@@ -1959,7 +1959,7 @@ class ConvexEC2Complete:
                 self.logger.warning(f"⚠️ {yesterday_date_str}のデータがありません。クリア処理のみ実行します。")
                 # データがなくてもクリア処理は実行
                 self.clear_cvx_stake_history_table()
-                return True
+                return False
             
             self.logger.info(f"✅ {len(yesterday_items)}件の前日データを取得しました")
             
@@ -2175,7 +2175,7 @@ class ConvexEC2Complete:
             if not yesterday_items:
                 self.logger.warning(f"⚠️ {yesterday_date_str}のデータがありません。クリア処理のみ実行します。")
                 # 前日データが空の場合は削除をスキップ（当日分を消さない）
-                return True
+                return False
             
             self.logger.info(f"✅ {len(yesterday_items)}件の前日データを取得しました")
             
@@ -2255,6 +2255,9 @@ class ConvexEC2Complete:
                         self.logger.error(traceback.format_exc())
             
             self.logger.info(f"✅ OHLCデータ保存完了: {ohlc_saved_count}件")
+            if ohlc_saved_count == 0:
+                self.logger.error("❌ ConvexPoolOHLCDailyに保存できたデータがありません")
+                return False
             
             # 4. Remarksが空でないデータをConvexPoolRemarksHistoryに保存（全てのデータ、元のtimestampを使用）
             if 'ConvexPoolRemarksHistory' not in self.tables:
@@ -2519,7 +2522,7 @@ class ConvexEC2Complete:
                 self.logger.warning(f"⚠️ {yesterday_date_str}のcvxCRVデータがありません。クリア処理のみ実行します。")
                 # データがなくてもクリア処理は実行
                 self.clear_cvxcrv_stake_history_table()
-                return True
+                return False
             
             self.logger.info(f"✅ {len(yesterday_items)}件の前日cvxCRVデータを取得しました")
             
@@ -2768,8 +2771,8 @@ class ConvexEC2Complete:
                 if api_data:
                     factory_id_updated = self.update_pool_latest_with_factory_ids(api_data)
             
-            # 結果判定
-            if rate_saved or convex_saved or factory_id_updated:
+            # 結果判定: Convex本体の保存ができていない場合は失敗扱いにする。
+            if convex_saved:
                 self.success_count += 1
                 status_msg = []
                 if rate_saved:
@@ -2784,7 +2787,7 @@ class ConvexEC2Complete:
                 return True
             else:
                 self.error_count += 1
-                error_msg = "❌ データ取得・保存失敗"
+                error_msg = "❌ Convexデータ取得・保存失敗"
                 self.logger.error(error_msg)
                 if self.slack_notifier:
                     self.slack_notifier.notify_error(
@@ -2952,9 +2955,11 @@ def main():
                     )
                     return
 
-            scraper.aggregate_yesterday_ohlc_and_clear_history()
-            scraper.aggregate_yesterday_cvxcrv_ohlc_and_clear_history()
-            scraper.aggregate_yesterday_convex_pool_ohlc_and_remarks()
+            cvx_ok = scraper.aggregate_yesterday_ohlc_and_clear_history()
+            cvxcrv_ok = scraper.aggregate_yesterday_cvxcrv_ohlc_and_clear_history()
+            pool_ok = scraper.aggregate_yesterday_convex_pool_ohlc_and_remarks()
+            if not (cvx_ok and cvxcrv_ok and pool_ok):
+                raise RuntimeError("日次集約で保存対象データが不足、または保存に失敗しました")
             return
 
         # GitHub ActionsやRUN_ONCE指定時は1回だけ実行して終了

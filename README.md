@@ -16,7 +16,7 @@ CurConTrackerのバックエンドサービス群。**GitHub Actions + Supabase*
 
 ## 🎯 概要
 Convex/Curveのデータを定期取得し、Supabaseに保存・日次集約します。  
-定期実行は GitHub Actions（`workflow_dispatch`）を使用し、EventBridge + Lambda でJST時間に合わせてトリガーします。
+定期実行は GitHub Actions（`workflow_dispatch`）を使用し、EventBridge Scheduler + Lambda でJST時間に合わせてトリガーします。
 
 ## 🧭 現行アーキテクチャ
 - **実行基盤**: GitHub Actions（`workflow_dispatch`）

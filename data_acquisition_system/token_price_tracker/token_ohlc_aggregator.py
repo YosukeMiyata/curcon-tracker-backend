@@ -486,7 +486,7 @@ class TokenOHLCAggregator:
             if not items:
                 self.logger.warning("⚠️ 昨日のデータが1件もありません。処理を終了します。")
                 self.logger.info("📊 TokenPriceHistoryテーブルはクリアされません。")
-                return True
+                return False
             
             # 3. OHLCデータを集約
             ohlc_data = self.aggregate_ohlc_data(items)
