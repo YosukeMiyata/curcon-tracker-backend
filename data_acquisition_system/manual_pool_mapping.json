@@ -312,5 +312,13 @@
   "USDP​+crvUSD": "factory-crvusd-2",
   "FRAX​+PYUSD": "factory-stable-ng-28",
   "cUSDO​+USDC": "factory-stable-ng-335",
-  "OUSD​+msUSD": "factory-stable-ng-688"
+  "OUSD​+msUSD": "factory-stable-ng-688",
+  "alUSD​+frxUSD":"factory-stable-ng-662",
+  "alUSD​+USDC":"factory-stable-ng-523",
+  "OUSD​+pmUSD":"factory-stable-ng-695",
+  "OUSD​+USDe":"factory-stable-ng-683",
+  "pmUSD​+iREET":"factory-twocrypto-349",
+  "srRoyUSDC​+frxUSD":"factory-stable-ng-684",
+  "tmvUSDC​+frxUSD":"factory-stable-ng-673",
+  "ynRWAx​+ynUSDx":"factory-stable-ng-593"
 }
