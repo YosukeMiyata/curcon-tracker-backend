@@ -320,5 +320,6 @@
   "pmUSD​+iREET":"factory-twocrypto-349",
   "srRoyUSDC​+frxUSD":"factory-stable-ng-684",
   "tmvUSDC​+frxUSD":"factory-stable-ng-673",
-  "ynRWAx​+ynUSDx":"factory-stable-ng-593"
+  "ynRWAx​+ynUSDx":"factory-stable-ng-593",
+  "frxUSD​+USG":"factory-stable-ng-705"
 }
