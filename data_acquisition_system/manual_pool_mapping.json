@@ -321,5 +321,9 @@
   "srRoyUSDC​+frxUSD":"factory-stable-ng-684",
   "tmvUSDC​+frxUSD":"factory-stable-ng-673",
   "ynRWAx​+ynUSDx":"factory-stable-ng-593",
-  "frxUSD​+USG":"factory-stable-ng-705"
+  "frxUSD​+USG":"factory-stable-ng-705",
+  "crvUSD​+cvcrvUSD":"factory-stable-ng-824",
+  "frxUSD​+evaUSDT":"factory-stable-ng-771",
+  "USDC​+USG":"factory-stable-ng-704",
+  "ynRWAx​+USDC":"factory-stable-ng-578"
 }
