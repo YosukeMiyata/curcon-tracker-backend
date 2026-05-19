@@ -325,5 +325,6 @@
   "crvUSD​+cvcrvUSD":"factory-stable-ng-824",
   "frxUSD​+evaUSDT":"factory-stable-ng-771",
   "USDC​+USG":"factory-stable-ng-704",
-  "ynRWAx​+USDC":"factory-stable-ng-578"
+  "ynRWAx​+USDC":"factory-stable-ng-578",
+  "frxUSD​+savUSD":"factory-stable-ng-660"
 }
