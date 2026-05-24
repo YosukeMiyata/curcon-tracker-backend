@@ -326,5 +326,6 @@
   "frxUSD​+evaUSDT":"factory-stable-ng-771",
   "USDC​+USG":"factory-stable-ng-704",
   "ynRWAx​+USDC":"factory-stable-ng-578",
-  "frxUSD​+savUSD":"factory-stable-ng-660"
+  "frxUSD​+savUSD":"factory-stable-ng-660",
+  "frxUSD​+USPC":"factory-stable-ng-797"
 }
