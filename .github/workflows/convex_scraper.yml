@@ -28,9 +28,10 @@ jobs:
 
       - name: Setup Chrome
         uses: browser-actions/setup-chrome@v2
-
-      - name: Setup Chromedriver
-        uses: nanasess/setup-chromedriver@v2
+        id: setup-chrome
+        with:
+          install-chromedriver: true
+          install-dependencies: true
 
       - name: Install Python deps
         run: |
@@ -44,6 +45,10 @@ jobs:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_ONCE: "true"
+          SE_BROWSER_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          CHROMEDRIVER_PATH: ${{ steps.setup-chrome.outputs.chromedriver-path }}
         run: |
+          echo "Chrome: $(${SE_BROWSER_PATH} --version)"
+          echo "ChromeDriver: $(${CHROMEDRIVER_PATH} --version)"
           python data_acquisition_system/convex_ec2_complete.py
 

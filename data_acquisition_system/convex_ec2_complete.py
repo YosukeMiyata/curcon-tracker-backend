@@ -196,6 +196,21 @@ class ConvexEC2Complete:
         self.chrome_options.add_argument('--window-size=1920,1080')
         self.chrome_options.add_argument('--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
+    def create_chrome_driver(self):
+        """Chrome WebDriver を作成（GitHub Actions では明示パスを優先）"""
+        options = self.chrome_options
+        chrome_bin = os.getenv("SE_BROWSER_PATH") or os.getenv("CHROME_BIN")
+        if chrome_bin:
+            options.binary_location = chrome_bin
+
+        chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
+        if chromedriver_path:
+            return webdriver.Chrome(
+                service=Service(executable_path=chromedriver_path),
+                options=options,
+            )
+        return webdriver.Chrome(options=options)
+
     def setup_api_keys(self):
         """APIキー設定"""
         self.coingecko_api_key = os.getenv('COINGECKO_API_KEY')
@@ -846,7 +861,7 @@ class ConvexEC2Complete:
         """Convex Financeからデータをスクレイピング"""
         driver = None
         try:
-            driver = webdriver.Chrome(options=self.chrome_options)
+            driver = self.create_chrome_driver()
             
             # ページアクセス
             driver.get("https://curve.convexfinance.com/stake")

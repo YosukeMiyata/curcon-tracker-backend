@@ -28,9 +28,10 @@ jobs:
 
       - name: Setup Chrome
         uses: browser-actions/setup-chrome@v2
-
-      - name: Setup Chromedriver
-        uses: nanasess/setup-chromedriver@v2
+        id: setup-chrome
+        with:
+          install-chromedriver: true
+          install-dependencies: true
 
       - name: Install Python deps
         run: |
@@ -46,6 +47,10 @@ jobs:
           TARGET_HOUR: "0"
           TARGET_MINUTE: "30"
           TARGET_TOLERANCE_MINUTES: "10"
+          SE_BROWSER_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          CHROMEDRIVER_PATH: ${{ steps.setup-chrome.outputs.chromedriver-path }}
         run: |
+          echo "Chrome: $(${SE_BROWSER_PATH} --version)"
+          echo "ChromeDriver: $(${CHROMEDRIVER_PATH} --version)"
           python data_acquisition_system/convex_ec2_complete.py
 
