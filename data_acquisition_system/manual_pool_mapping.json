@@ -330,5 +330,6 @@
   "frxUSD​+USPC":"factory-stable-ng-797",
   "evaUSDT​+evaUSDC":"factory-stable-ng-794",
   "USG​+sDOLA":"factory-stable-ng-895",
-  "tacBTC​+cbBTC​+FBTC":"factory-stable-ng-430"
+  "tacBTC​+cbBTC​+FBTC":"factory-stable-ng-430",
+  "frxETH​+evaETH":"factory-stable-ng-816"
 }
