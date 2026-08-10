@@ -334,5 +334,7 @@
   "frxETH​+evaETH":"factory-stable-ng-816",
   "frxUSD​+avUSD":"factory-stable-ng-675",
   "frxUSD​+DUSD":"factory-stable-ng-496",
-  "frxUSD​+USD3":"factory-stable-ng-906"
+  "frxUSD​+USD3":"factory-stable-ng-906",
+  "FT​+ftUSD":"factory-twocrypto-390",
+  "crvUSD (syrupUSDC collateral)":"oneway-v2-2"
 }
