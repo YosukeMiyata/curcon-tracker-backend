@@ -337,5 +337,7 @@
   "frxUSD​+USD3":"factory-stable-ng-906",
   "FT​+ftUSD":"factory-twocrypto-390",
   "crvUSD (syrupUSDC collateral)":"oneway-v2-2",
-  "frxUSD​+sGho":"factory-stable-ng-885"
+  "frxUSD​+sGho":"factory-stable-ng-885",
+  "sUSG​+reUSD":"factory-stable-ng-898",
+  "ftUSD​+USDC":"factory-stable-ng-932"
 }
