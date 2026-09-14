@@ -339,5 +339,6 @@
   "crvUSD (syrupUSDC collateral)":"oneway-v2-2",
   "frxUSD​+sGho":"factory-stable-ng-885",
   "sUSG​+reUSD":"factory-stable-ng-898",
-  "ftUSD​+USDC":"factory-stable-ng-932"
+  "ftUSD​+USDC":"factory-stable-ng-932",
+  "BOLD​+avUSD":"factory-stable-ng-915"
 }
