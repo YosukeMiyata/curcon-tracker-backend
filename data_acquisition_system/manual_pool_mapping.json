@@ -340,5 +340,6 @@
   "frxUSD​+sGho":"factory-stable-ng-885",
   "sUSG​+reUSD":"factory-stable-ng-898",
   "ftUSD​+USDC":"factory-stable-ng-932",
-  "BOLD​+avUSD":"factory-stable-ng-915"
+  "BOLD​+avUSD":"factory-stable-ng-915",
+  "crvUSD (svZCHF collateral)":"oneway-v2-3"
 }
