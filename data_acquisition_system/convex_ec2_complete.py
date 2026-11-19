@@ -1125,6 +1125,8 @@ class ConvexEC2Complete:
                 
                 # トークンベースのマッチングをチェック
                 if self._tokens_match_improved(search_tokens, convex_tokens):
+                    if self._is_unsupported_id_format(pool_id, pool_name, pool_name_api):
+                        continue
                     self.logger.info(f"✅ マッチング成功: {pool_name} -> {pool_name_api} (ID: {pool_id})")
                     return pool_id
                 
@@ -1132,6 +1134,8 @@ class ConvexEC2Complete:
                 if pool_symbol:
                     convex_tokens_symbol = self._split_convex_name(pool_symbol)
                     if self._tokens_match_improved(search_tokens, convex_tokens_symbol):
+                        if self._is_unsupported_id_format(pool_id, pool_name, pool_symbol):
+                            continue
                         self.logger.info(f"✅ シンボルマッチング成功: {pool_name} -> {pool_symbol} (ID: {pool_id})")
                         return pool_id
             
@@ -1148,12 +1152,16 @@ class ConvexEC2Complete:
                 # Vaultの場合も同様のトークンマッチング
                 convex_tokens_vault = self._split_convex_name(vault_name)
                 if self._tokens_match_improved(search_tokens, convex_tokens_vault):
+                    if self._is_unsupported_id_format(vault_id, pool_name, vault_name):
+                        continue
                     self.logger.info(f"✅ Vaultマッチング成功: {pool_name} -> {vault_name} (ID: {vault_id})")
                     return vault_id
                 
                 if vault_symbol:
                     convex_tokens_vault_symbol = self._split_convex_name(vault_symbol)
                     if self._tokens_match_improved(search_tokens, convex_tokens_vault_symbol):
+                        if self._is_unsupported_id_format(vault_id, pool_name, vault_symbol):
+                            continue
                         self.logger.info(f"✅ Vaultシンボルマッチング成功: {pool_name} -> {vault_symbol} (ID: {vault_id})")
                         return vault_id
             
@@ -1166,6 +1174,20 @@ class ConvexEC2Complete:
         except Exception as e:
             self.logger.error(f"❌ factory_id検索エラー: {e}")
             return None
+
+    def _is_unsupported_id_format(self, api_id, pool_name, matched_name):
+        """Convex APIの新形式ID（例: ethereum-0x...）かを判定する。
+
+        Convex APIのIDは "ethereum-<アドレス>" 形式に変わったため、人力対応表の
+        factory_id形式（factory-stable-ng-*, oneway-* など）と一致しない。
+        このようなIDは採用せず、マッチング失敗として人力対応表で補完させる。
+        """
+        if isinstance(api_id, str) and api_id.startswith('ethereum-'):
+            self.logger.warning(
+                f"⚠️ 非対応ID形式のため不採用: {pool_name} -> {matched_name} (ID: {api_id})"
+            )
+            return True
+        return False
 
     def _split_pool_name(self, pool_name):
         """検索プール名を+で分割してトークンを取得"""
